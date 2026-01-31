@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brain Rot Central</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-color: #FFF8F0;
+            --card-bg: #FFFFFF;
+            --text-main: #2D2424;
+            --accent-pink: #FF8BA7;
+            --accent-green: #D4E09B;
+        }
+
+        body {
+            font-family: 'Quicksand', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 40px 20px;
+            background-image: radial-gradient(var(--accent-pink) 2px, transparent 2px);
+            background-size: 30px 30px;
+        }
+
+        .container { max-width: 700px; margin: 0 auto; }
+
+        h1 {
+            font-family: 'Fraunces', serif;
+            font-weight: 600;
+            font-size: 3.5rem;
+            text-align: center;
+            margin-bottom: 10px;
+            text-shadow: 3px 3px 0px var(--accent-green);
+        }
+
+        p.subtitle {
+            text-align: center;
+            font-size: 1.2rem;
+            margin-bottom: 50px;
+            background: var(--accent-green);
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            border: 2px solid var(--text-main);
+            position: relative;
+            left: 50%;
+            transform: translateX(-50%);
+            box-shadow: 4px 4px 0px var(--text-main);
+        }
+
+        ul { list-style: none; padding: 0; display: grid; gap: 25px; }
+
+        li {
+            background: var(--card-bg);
+            border: 3px solid var(--text-main);
+            border-radius: 16px;
+            overflow: hidden; 
+            box-shadow: 6px 6px 0px var(--text-main);
+            transition: all 0.2s ease;
+        }
+
+        li:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 8px 8px 0px var(--accent-pink);
+        }
+
+        .card-content {
+            padding: 30px;
+            font-size: 1.3rem;
+            line-height: 1.5;
+            border-bottom: 2px solid var(--text-main);
+        }
+
+        .card-actions {
+            background: #fff;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .vote-btn {
+            background: none;
+            border: 2px solid var(--text-main);
+            border-radius: 50px;
+            padding: 8px 16px;
+            font-family: 'Quicksand', sans-serif;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: background 0.1s, transform 0.1s;
+        }
+        
+        .vote-btn:active {
+             transform: scale(0.95);
+        }
+
+        .btn-funny:hover { background-color: var(--accent-green); }
+        .btn-meh:hover { background-color: #e0e0e0; }
+
+        /* --- ICON STYLES --- */
+        .vote-icon {
+            width: 24px;
+            height: 24px;
+            stroke: var(--text-main); 
+            stroke-width: 2; 
+            fill: none; 
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        
+        /* Fill the eyes so they stand out */
+        .vote-icon circle.eye {
+            fill: var(--text-main);
+        }
+
+        #data-list { text-align: center; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Brain Rot Central</h1>
+        <p class="subtitle">Fresh from the Database</p>
+        <ul id="data-list">Loading the vibes...</ul>
+    </div>
+
+    <script>
+        // --- ⚠️ PASTE YOUR KEYS HERE AGAIN ⚠️ ---
+        const SUPABASE_URL = 'https://secure.almostcrackd.ai'
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpaHNnbmZqcW1ram1vb3d5ZmJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk1Mjc0MDAsImV4cCI6MjA2NTEwMzQwMH0.c9UQS_o2bRygKOEdnuRx7x7PeSf_OUGDtf9l3fMqMSQ'
+
+        const { createClient } = window.supabase
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY)
+
+        async function fetchCaptions() {
+            const listElement = document.getElementById('data-list')
+            
+            const { data, error } = await supabaseClient
+                .from('captions')
+                .select('*')
+
+            listElement.innerHTML = ''
+
+            if (error) {
+                console.error('Error:', error)
+                listElement.textContent = 'Oops! ' + error.message
+            } else {
+                data.forEach(item => {
+                    const li = document.createElement('li')
+                    
+                    li.innerHTML = `
+                        <div class="card-content">
+                            ✨ ${item.content || "No text found"}
+                        </div>
+                        <div class="card-actions">
+                            <button class="vote-btn btn-funny" onclick="this.querySelector('span').innerText++">
+                                <svg class="vote-icon" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <circle class="eye" cx="9" cy="10" r="1.5"></circle> <circle class="eye" cx="15" cy="10" r="1.5"></circle> <path d="M8 14s1.5 2 4 2 4-2 4-2"></path> </svg>
+                                <span>${item.like_count || 0}</span>
+                            </button>
+                            <button class="vote-btn btn-meh">
+                                <svg class="vote-icon" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="8" y1="14" x2="16" y2="14"></line>
+                                    <line x1="9" y1="9" x2="9.01" y2="9" stroke-width="3"></line>
+                                    <line x1="15" y1="9" x2="15.01" y2="9" stroke-width="3"></line>
+                                </svg>
+                                Meh
+                            </button>
+                        </div>
+                    `
+                    listElement.appendChild(li)
+                })
+            }
+        }
+
+        fetchCaptions()
+    </script>
+</body>
+</html>
