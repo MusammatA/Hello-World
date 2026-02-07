@@ -71,7 +71,6 @@
             box-shadow: 8px 8px 0px var(--accent-pink);
         }
 
-        /* --- ADDED IMAGE STYLE --- */
         .meme-image {
             width: 100%;
             height: auto;
@@ -108,13 +107,6 @@
             gap: 10px;
             transition: background 0.1s, transform 0.1s;
         }
-        
-        .vote-btn:active {
-             transform: scale(0.95);
-        }
-
-        .btn-funny:hover { background-color: var(--accent-green); }
-        .btn-meh:hover { background-color: #e0e0e0; }
 
         .vote-icon {
             width: 24px;
@@ -126,13 +118,8 @@
             stroke-linejoin: round;
         }
         
-        .vote-icon circle.eye {
-            fill: var(--text-main);
-        }
+        .vote-icon circle.eye { fill: var(--text-main); }
 
-        #data-list { text-align: center; }
-
-        /* --- AUTH BOX STYLE --- */
         .auth-box {
             background: white;
             border: 3px solid var(--text-main);
@@ -161,12 +148,11 @@
         const { createClient } = window.supabase
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-        // --- WEEK 3 AUTH FUNCTIONS ---
         async function signIn() {
             const { error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                    // Change window.location.origin to this exact string
+                    // Stay on your local site
                     redirectTo: 'http://localhost:3000',
                     queryParams: {
                         client_id: '388960353527-fh4grc6mla425lg0e3g1hh67omtrdihd.apps.googleusercontent.com'
@@ -181,61 +167,60 @@
             window.location.reload()
         }
 
-        // --- THE RENDER ENGINE ---
         async function renderApp() {
-                    const container = document.getElementById('content-view')
-                    const { data: { user } } = await supabaseClient.auth.getUser()
+            const container = document.getElementById('content-view')
+            const { data: { user } } = await supabaseClient.auth.getUser()
 
-                    if (!user) {
-                        container.innerHTML = `
-                            <div class="auth-box">
-                                <h2>Login to see the memes 🔒</h2>
-                                <button class="vote-btn btn-funny" onclick="signIn()" style="margin: 20px auto;">
-                                    Login with Google
-                                </button>
-                            </div>`
-                    } else {
-                        // CHANGE: We are pulling from the 'images' table because that's where the IDs are!
-                        const { data, error } = await supabaseClient.from('images').select('*')
-                        
-                        if (error) {
-                            container.innerHTML = `<p>Error: ${error.message}</p>`
-                            return
-                        }
-
-                        let html = `
-                            <div style="text-align: right; margin-bottom: 20px;">
-                                <button class="vote-btn" onclick="signOut()">Logout (${user.email.split('@')[0]})</button>
-                            </div>
-                            <ul id="data-list">`
-                        
-                        data.forEach(item => {
-                            // FIX: Using item.id to match the 'uuid' column in your screenshot
-                            const imageUrl = `https://fshvifvunmcbpbeidvbw.supabase.co/storage/v1/object/public/meme_images/${item.id}.jpg`;
-                            
-                            html += `
-                                <li>
-                                    <img src="${imageUrl}" class="meme-image" alt="Meme" onerror="this.src='https://via.placeholder.com/400?text=Image+Missing'">
-                                    <div class="card-content">
-                                        ✨ ${item.content || "Meme ID: " + item.id.substring(0,8)}
-                                    </div>
-                                    <div class="card-actions">
-                                        <button class="vote-btn btn-funny">
-                                            <svg class="vote-icon" viewBox="0 0 24 24">
-                                                <circle cx="12" cy="12" r="10"></circle>
-                                                <circle class="eye" cx="9" cy="10" r="1.5"></circle> 
-                                                <circle class="eye" cx="15" cy="10" r="1.5"></circle> 
-                                                <path d="M8 14s1.5 2 4 2 4-2 4-2"></path> 
-                                            </svg>
-                                            <span>${item.like_count || 0}</span>
-                                        </button>
-                                    </div>
-                                </li>`
-                        })
-                        html += `</ul>`
-                        container.innerHTML = html
-                    }
+            if (!user) {
+                container.innerHTML = `
+                    <div class="auth-box">
+                        <h2>Login to see the memes 🔒</h2>
+                        <button class="vote-btn" onclick="signIn()" style="margin: 20px auto;">
+                            Login with Google
+                        </button>
+                    </div>`
+            } else {
+                // Pull from the images table where the IDs live
+                const { data, error } = await supabaseClient.from('images').select('*')
+                
+                if (error) {
+                    container.innerHTML = `<p>Error: ${error.message}</p>`
+                    return
                 }
+
+                let html = `
+                    <div style="text-align: right; margin-bottom: 20px;">
+                        <button class="vote-btn" onclick="signOut()">Logout (${user.email.split('@')[0]})</button>
+                    </div>
+                    <ul id="data-list">`
+                
+                data.forEach(item => {
+                    // Link to the shared instructor storage
+                    const imageUrl = `https://fshvifvunmcbpbeidvbw.supabase.co/storage/v1/object/public/meme_images/${item.id}.jpg`;
+                    
+                    html += `
+                        <li>
+                            <img src="${imageUrl}" class="meme-image" alt="Meme" onerror="this.src='https://via.placeholder.com/400?text=Image+Missing'">
+                            <div class="card-content">
+                                ✨ Meme ID: ${item.id.substring(0,8)}
+                            </div>
+                            <div class="card-actions">
+                                <button class="vote-btn">
+                                    <svg class="vote-icon" viewBox="0 0 24 24">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <circle class="eye" cx="9" cy="10" r="1.5"></circle> 
+                                        <circle class="eye" cx="15" cy="10" r="1.5"></circle> 
+                                        <path d="M8 14s1.5 2 4 2 4-2 4-2"></path> 
+                                    </svg>
+                                    <span>${item.like_count || 0}</span>
+                                </button>
+                            </div>
+                        </li>`
+                })
+                html += `</ul>`
+                container.innerHTML = html
+            }
+        }
 
         renderApp()
     </script>
