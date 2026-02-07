@@ -71,6 +71,14 @@
             box-shadow: 8px 8px 0px var(--accent-pink);
         }
 
+        /* --- ADDED IMAGE STYLE --- */
+        .meme-image {
+            width: 100%;
+            height: auto;
+            border-bottom: 3px solid var(--text-main);
+            display: block;
+        }
+
         .card-content {
             padding: 30px;
             font-size: 1.3rem;
@@ -108,7 +116,6 @@
         .btn-funny:hover { background-color: var(--accent-green); }
         .btn-meh:hover { background-color: #e0e0e0; }
 
-        /* --- ICON STYLES --- */
         .vote-icon {
             width: 24px;
             height: 24px;
@@ -119,12 +126,21 @@
             stroke-linejoin: round;
         }
         
-        /* Fill the eyes so they stand out */
         .vote-icon circle.eye {
             fill: var(--text-main);
         }
 
         #data-list { text-align: center; }
+
+        /* --- AUTH BOX STYLE --- */
+        .auth-box {
+            background: white;
+            border: 3px solid var(--text-main);
+            border-radius: 16px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 6px 6px 0px var(--text-main);
+        }
     </style>
 </head>
 <body>
@@ -132,61 +148,106 @@
     <div class="container">
         <h1>Brain Rot Central</h1>
         <p class="subtitle">Fresh from the Database</p>
-        <ul id="data-list">Loading the vibes...</ul>
+        
+        <div id="content-view">
+            <p style="text-align: center;">Loading the vibes...</p>
+        </div>
     </div>
 
     <script>
-        // --- ⚠️ PASTE YOUR KEYS HERE AGAIN ⚠️ ---
         const SUPABASE_URL = 'https://secure.almostcrackd.ai'
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpaHNnbmZqcW1ram1vb3d5ZmJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk1Mjc0MDAsImV4cCI6MjA2NTEwMzQwMH0.c9UQS_o2bRygKOEdnuRx7x7PeSf_OUGDtf9l3fMqMSQ'
 
         const { createClient } = window.supabase
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-        async function fetchCaptions() {
-            const listElement = document.getElementById('data-list')
-            
-            const { data, error } = await supabaseClient
-                .from('captions')
-                .select('*')
+        // --- WEEK 3 AUTH FUNCTIONS ---
+        async function signIn() {
+            const { error } = await supabaseClient.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: window.location.origin,
+                    queryParams: {
+                        client_id: '388960353527-fh4grc6mla425lg0e3g1hh67omtrdihd.apps.googleusercontent.com'
+                    }
+                }
+            })
+            if (error) console.error(error)
+        }
 
-            listElement.innerHTML = ''
+        async function signOut() {
+            await supabaseClient.auth.signOut()
+            window.location.reload()
+        }
 
-            if (error) {
-                console.error('Error:', error)
-                listElement.textContent = 'Oops! ' + error.message
+        // --- THE RENDER ENGINE ---
+        async function renderApp() {
+            const container = document.getElementById('content-view')
+            const { data: { user } } = await supabaseClient.auth.getUser()
+
+            if (!user) {
+                // GATED UI
+                container.innerHTML = `
+                    <div class="auth-box">
+                        <h2>Login to see the memes 🔒</h2>
+                        <button class="vote-btn btn-funny" onclick="signIn()" style="margin: 20px auto;">
+                            Login with Google
+                        </button>
+                    </div>
+                `
             } else {
+                // AUTHENTICATED UI
+                const { data, error } = await supabaseClient.from('captions').select('*')
+                
+                if (error) {
+                    container.innerHTML = `<p>Error: ${error.message}</p>`
+                    return
+                }
+
+                let html = `
+                    <div style="text-align: right; margin-bottom: 20px;">
+                        <button class="vote-btn" onclick="signOut()">Logout (${user.email.split('@')[0]})</button>
+                    </div>
+                    <ul id="data-list">`
+                
                 data.forEach(item => {
-                    const li = document.createElement('li')
+                    // Shared image URL from classmates/instructor
+                    const imageUrl = `https://fshvifvunmcbpbeidvbw.supabase.co/storage/v1/object/public/meme_images/${item.image_id}.jpg`
                     
-                    li.innerHTML = `
-                        <div class="card-content">
-                            ✨ ${item.content || "No text found"}
-                        </div>
-                        <div class="card-actions">
-                            <button class="vote-btn btn-funny" onclick="this.querySelector('span').innerText++">
-                                <svg class="vote-icon" viewBox="0 0 24 24">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <circle class="eye" cx="9" cy="10" r="1.5"></circle> <circle class="eye" cx="15" cy="10" r="1.5"></circle> <path d="M8 14s1.5 2 4 2 4-2 4-2"></path> </svg>
-                                <span>${item.like_count || 0}</span>
-                            </button>
-                            <button class="vote-btn btn-meh">
-                                <svg class="vote-icon" viewBox="0 0 24 24">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <line x1="8" y1="14" x2="16" y2="14"></line>
-                                    <line x1="9" y1="9" x2="9.01" y2="9" stroke-width="3"></line>
-                                    <line x1="15" y1="9" x2="15.01" y2="9" stroke-width="3"></line>
-                                </svg>
-                                Meh
-                            </button>
-                        </div>
-                    `
-                    listElement.appendChild(li)
+                    html += `
+                        <li>
+                            <img src="${imageUrl}" class="meme-image" alt="Meme" onerror="this.style.display='none'">
+                            <div class="card-content">
+                                ✨ ${item.content || "No text found"}
+                            </div>
+                            <div class="card-actions">
+                                <button class="vote-btn btn-funny" onclick="this.querySelector('span').innerText++">
+                                    <svg class="vote-icon" viewBox="0 0 24 24">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <circle class="eye" cx="9" cy="10" r="1.5"></circle> 
+                                        <circle class="eye" cx="15" cy="10" r="1.5"></circle> 
+                                        <path d="M8 14s1.5 2 4 2 4-2 4-2"></path> 
+                                    </svg>
+                                    <span>${item.like_count || 0}</span>
+                                </button>
+                                <button class="vote-btn btn-meh">
+                                    <svg class="vote-icon" viewBox="0 0 24 24">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="8" y1="14" x2="16" y2="14"></line>
+                                        <line x1="9" y1="9" x2="9.01" y2="9" stroke-width="3"></line>
+                                        <line x1="15" y1="9" x2="15.01" y2="9" stroke-width="3"></line>
+                                    </svg>
+                                    Meh
+                                </button>
+                            </div>
+                        </li>`
                 })
+                html += `</ul>`
+                container.innerHTML = html
             }
         }
 
-        fetchCaptions()
+        renderApp()
     </script>
 </body>
 </html>
