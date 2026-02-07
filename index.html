@@ -55,71 +55,6 @@
             box-shadow: 4px 4px 0px var(--text-main);
         }
 
-        ul { list-style: none; padding: 0; display: grid; gap: 25px; }
-
-        li {
-            background: var(--card-bg);
-            border: 3px solid var(--text-main);
-            border-radius: 16px;
-            overflow: hidden; 
-            box-shadow: 6px 6px 0px var(--text-main);
-            transition: all 0.2s ease;
-        }
-
-        li:hover {
-            transform: translate(-2px, -2px);
-            box-shadow: 8px 8px 0px var(--accent-pink);
-        }
-
-        .meme-image {
-            width: 100%;
-            height: auto;
-            border-bottom: 3px solid var(--text-main);
-            display: block;
-        }
-
-        .card-content {
-            padding: 30px;
-            font-size: 1.3rem;
-            line-height: 1.5;
-            border-bottom: 2px solid var(--text-main);
-        }
-
-        .card-actions {
-            background: #fff;
-            padding: 15px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .vote-btn {
-            background: none;
-            border: 2px solid var(--text-main);
-            border-radius: 50px;
-            padding: 8px 16px;
-            font-family: 'Quicksand', sans-serif;
-            font-weight: 700;
-            cursor: pointer;
-            font-size: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            transition: background 0.1s, transform 0.1s;
-        }
-        
-        .vote-icon {
-            width: 24px;
-            height: 24px;
-            stroke: var(--text-main); 
-            stroke-width: 2; 
-            fill: none; 
-            stroke-linecap: round;
-            stroke-linejoin: round;
-        }
-        
-        .vote-icon circle.eye { fill: var(--text-main); }
-
         .auth-box {
             background: white;
             border: 3px solid var(--text-main);
@@ -128,6 +63,20 @@
             text-align: center;
             box-shadow: 6px 6px 0px var(--text-main);
         }
+
+        .vote-btn {
+            background: none;
+            border: 2px solid var(--text-main);
+            border-radius: 50px;
+            padding: 12px 24px;
+            font-family: 'Quicksand', sans-serif;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: background 0.1s;
+        }
+
+        .vote-btn:hover { background-color: var(--accent-green); }
     </style>
 </head>
 <body>
@@ -135,10 +84,7 @@
     <div class="container">
         <h1>Brain Rot Central</h1>
         <p class="subtitle">Fresh from the Database</p>
-        
-        <div id="content-view">
-            <p style="text-align: center;">Loading the vibes...</p>
-        </div>
+        <div id="content-view"></div>
     </div>
 
     <script>
@@ -148,19 +94,13 @@
         const { createClient } = window.supabase
         const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-        // --- AUTH FUNCTIONS ---
         async function signIn() {
-            // We set the redirect to localhost:3000 to keep you on your page
-            const { error } = await supabaseClient.auth.signInWithOAuth({
+            await supabaseClient.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                    redirectTo: 'http://localhost:3000',
-                    queryParams: {
-                        client_id: '388960353527-fh4grc6mla425lg0e3g1hh67omtrdihd.apps.googleusercontent.com'
-                    }
+                    redirectTo: 'http://localhost:3000'
                 }
-             })
-            if (error) console.error(error)
+            })
         }
 
         async function signOut() {
@@ -168,63 +108,25 @@
             window.location.reload()
         }
 
-        // --- RENDER ENGINE ---
         async function renderApp() {
             const container = document.getElementById('content-view')
-            
-            // This grabs the session directly from the browser to bypass redirect loops
             const { data: { session } } = await supabaseClient.auth.getSession()
-            const user = session?.user
 
-            if (!user) {
-                // Show your original Gated UI
+            if (!session) {
+                // This is your original gated screen
                 container.innerHTML = `
                     <div class="auth-box">
                         <h2>Login to see the memes 🔒</h2>
-                        <button class="vote-btn" onclick="signIn()" style="margin: 20px auto;">
-                            Login with Google
-                        </button>
+                        <button class="vote-btn" onclick="signIn()">Login with Google</button>
                     </div>`
             } else {
-                // Fetch the images from the database images table
-                const { data, error } = await supabaseClient.from('images').select('*')
-                
-                if (error) {
-                    container.innerHTML = `<p>Error: ${error.message}</p>`
-                    return
-                }
-
-                let html = `
-                    <div style="text-align: right; margin-bottom: 20px;">
-                        <button class="vote-btn" onclick="signOut()">Logout (${user.email.split('@')[0]})</button>
-                    </div>
-                    <ul id="data-list">`
-                
-                data.forEach(item => {
-                    // Shared image URL from instructor's storage
-                    const imageUrl = `https://fshvifvunmcbpbeidvbw.supabase.co/storage/v1/object/public/meme_images/${item.id}.jpg`;
-                    
-                    html += `
-                        <li>
-                            <img src="${imageUrl}" class="meme-image" alt="Meme">
-                            <div class="card-content">
-                                ✨ Meme ID: ${item.id.substring(0,8)}
-                            </div>
-                            <div class="card-actions">
-                                <button class="vote-btn">
-                                    <svg class="vote-icon" viewBox="0 0 24 24">
-                                        <circle cx="12" cy="12" r="10"></circle>
-                                        <circle class="eye" cx="9" cy="10" r="1.5"></circle> 
-                                        <circle class="eye" cx="15" cy="10" r="1.5"></circle> 
-                                        <path d="M8 14s1.5 2 4 2 4-2 4-2"></path> 
-                                    </svg>
-                                    <span>${item.like_count || 0}</span>
-                                </button>
-                            </div>
-                        </li>`
-                })
-                html += `</ul>`
-                container.innerHTML = html
+                // This shows once you are logged in, without the instructor's pictures
+                container.innerHTML = `
+                    <div style="text-align: center;">
+                        <h2>Welcome back! 👋</h2>
+                        <p>You are logged in as ${session.user.email}</p>
+                        <button class="vote-btn" onclick="signOut()">Logout</button>
+                    </div>`
             }
         }
 
