@@ -111,7 +111,7 @@
     </div>
 
     <script>
-        const SUPABASE_URL = 'https://secure.almostcrackd.ai'
+        const SUPABASE_URL = 'https://secure.almostcrackd.ai/auth/v1/callback'
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpaHNnbmZqcW1ram1vb3d5ZmJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk1Mjc0MDAsImV4cCI6MjA2NTEwMzQwMH0.c9UQS_o2bRygKOEdnuRx7x7PeSf_OUGDtf9l3fMqMSQ'
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
 
@@ -120,7 +120,7 @@
                 provider: 'google',
                 options: {
                     // Adding '/Hello-World' ensures you land back in YOUR project
-                    redirectTo: window.location.origin + '/auth/callback.html'
+                    redirectTo: window.location.origin + '/auth/callback'
         }
     })
 }
