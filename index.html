@@ -116,7 +116,6 @@
         
         let supabaseClient;
 
-        // Ensuring the client initializes only when the library is ready
         function getClient() {
             if (!supabaseClient) {
                 supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -134,44 +133,50 @@
             })
         }
 
+        // --- NEW PROACTIVE LOGIC ---
         async function renderApp() {
             const container = document.getElementById('content-view')
             const client = getClient();
-            const { data: { session } } = await client.auth.getSession()
 
-            if (!session) {
-                container.innerHTML = `
-                    <div class="auth-box">
-                        <h2>Login to see the memes 🔒</h2>
-                        <button class="vote-btn" onclick="signIn()" style="margin: 20px auto;">
-                            Login with Google
-                        </button>
-                    </div>`
-            } else {
-                const { data, error } = await client.from('images').select('*')
-                
-                if (error) {
-                    container.innerHTML = `<p>Error: ${error.message}</p>`
-                    return
+            // This listener solves the "flicker" by watching for the session to arrive
+            client.auth.onAuthStateChange(async (event, session) => {
+                if (session) {
+                    await showMemes(client, container);
+                } else {
+                    container.innerHTML = `
+                        <div class="auth-box">
+                            <h2>Login to see the memes 🔒</h2>
+                            <button class="vote-btn" onclick="signIn()" style="margin: 20px auto;">
+                                Login with Google
+                            </button>
+                        </div>`
                 }
+            });
+        }
 
-                let html = `
-                    <div style="text-align: right; margin-bottom: 20px;">
-                        <button class="vote-btn" onclick="getClient().auth.signOut().then(() => location.reload())">Logout</button>
-                    </div>
-                    <ul>`
-                
-                data.forEach(item => {
-                    const imageUrl = `https://fshvifvunmcbpbeidvbw.supabase.co/storage/v1/object/public/meme_images/${item.id}.jpg`;
-                    
-                    html += `
-                        <li>
-                            <img src="${imageUrl}" class="meme-image" alt="Meme">
-                            <div class="card-content">✨ Meme ID: ${item.id.substring(0,8)}</div>
-                        </li>`
-                })
-                container.innerHTML = html + `</ul>`
+        async function showMemes(client, container) {
+            const { data, error } = await client.from('images').select('*')
+            
+            if (error) {
+                container.innerHTML = `<p>Error: ${error.message}</p>`
+                return
             }
+
+            let html = `
+                <div style="text-align: right; margin-bottom: 20px;">
+                    <button class="vote-btn" onclick="getClient().auth.signOut().then(() => location.reload())">Logout</button>
+                </div>
+                <ul>`
+            
+            data.forEach(item => {
+                const imageUrl = `https://fshvifvunmcbpbeidvbw.supabase.co/storage/v1/object/public/meme_images/${item.id}.jpg`;
+                html += `
+                    <li>
+                        <img src="${imageUrl}" class="meme-image" alt="Meme">
+                        <div class="card-content">✨ Meme ID: ${item.id.substring(0,8)}</div>
+                    </li>`
+            })
+            container.innerHTML = html + `</ul>`
         }
 
         renderApp()
