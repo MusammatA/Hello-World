@@ -125,14 +125,21 @@
 
         async function signIn() {
             const client = getClient();
+            // await client.auth.signInWithOAuth({
+            //     provider: 'google',
+            //     options: {
+            //         redirectTo: window.location.origin + '/auth/callback'
+            //     }
+            // })
             await client.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                    redirectTo: window.location.origin + '/callback.html'
+                    redirectTo: window.location.origin + '/auth/callback'
                 }
             })
-        }
 
+        }
+        
         // --- NEW PROACTIVE LOGIC ---
         async function renderApp() {
             const container = document.getElementById('content-view')
@@ -183,5 +190,3 @@
     </script>
 </body>
 </html>
-
-""
