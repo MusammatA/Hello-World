@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brain Rot Central</title>
+    <title>Brain Rot Central - Debug Mode</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    
     <link rel="stylesheet" href="styles.css"> 
 </head>
 <body>
@@ -18,6 +17,11 @@
     <div class="container">
         <h1>Brain Rot Central</h1>
         <p class="subtitle">Fresh from the Database</p>
+
+        <div id="debug-box" style="background: #ffebeb; border: 2px solid red; padding: 20px; display: none; margin-bottom: 20px; border-radius: 10px;">
+            <h3 style="color: red; margin-top: 0;">⚠️ Debug Error Log:</h3>
+            <p id="debug-text" style="font-family: monospace;">No errors yet...</p>
+        </div>
 
         <div class="search-wrapper" style="display: none;">
             <input type="text" id="search-input" placeholder="🔍 Search for vibes, cats, or chaos...">
@@ -34,7 +38,7 @@
         
         let supabaseClient;
         let allMemes = []; 
-        let userVotes = {}; // { caption_id: 1 (up) or -1 (down) }
+        let userVotes = {}; 
 
         function getClient() {
             if (!supabaseClient) {
@@ -56,14 +60,13 @@
             const searchBar = document.querySelector('.search-wrapper');
             const client = getClient();
             
-            // Check session immediately
             const { data: { session } } = await client.auth.getSession();
             
             if (session) {
-                searchBar.style.display = 'block'; // Show search on login
+                searchBar.style.display = 'block'; 
                 await fetchAndShowMemes(client, container, session.user);
             } else {
-                searchBar.style.display = 'none'; // Hide search on logout
+                searchBar.style.display = 'none'; 
                 container.innerHTML = `
                     <div class="auth-box">
                         <h2>Login to see the memes 🔒</h2>
@@ -84,9 +87,8 @@
         async function fetchAndShowMemes(client, container, user) {
             // 1. Fetch Captions
             const { data: captions, error } = await client.from('captions').select('*');
-            if (error || !captions) {
-                container.innerHTML = `<p>Error loading vibes.</p>`;
-                console.error("Caption Error:", error);
+            if (error) {
+                showDebugError("Caption Fetch Error: " + error.message);
                 return;
             }
 
@@ -96,18 +98,22 @@
             const imageMap = {};
             if (images) images.forEach(img => imageMap[img.id] = img.url);
 
-            // 3. Fetch User's Existing Votes (CRITICAL FOR RELOAD)
+            // 3. Fetch User's Existing Votes
+            // We select ALL columns to see if 'value' is actually the right name
             const { data: votes, error: voteError } = await client
                 .from('caption_votes')
                 .select('*')
                 .eq('user_id', user.id);
             
-            if (voteError) console.error("Error fetching votes:", voteError);
+            if (voteError) {
+                console.error("Vote Fetch Error:", voteError);
+                // If this fails, the table might not permit reading
+            }
 
             userVotes = {};
             if (votes) votes.forEach(v => userVotes[v.caption_id] = v.value);
 
-            // 4. Merge Data
+            // 4. Merge & Render
             allMemes = captions.map(item => ({
                 ...item,
                 imageUrl: imageMap[item.image_id] || null
@@ -117,7 +123,6 @@
 
             // Search Listener
             const searchInput = document.getElementById('search-input');
-            // Remove old listeners by cloning (simple hack) or just adding new one safely
             const newSearch = searchInput.cloneNode(true);
             searchInput.parentNode.replaceChild(newSearch, searchInput);
             
@@ -146,7 +151,6 @@
                 const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
                 const displayUrl = item.imageUrl || fallbackGif;
 
-                // Determine active class based on server data
                 const myVote = userVotes[item.id] || 0; 
                 const upActive = myVote === 1 ? 'active up' : '';
                 const downActive = myVote === -1 ? 'active down' : '';
@@ -179,36 +183,32 @@
             container.innerHTML = html + `</ul>`;
         }
 
-        // --- FIXED "CRASH-PROOF" VOTE LOGIC ---
+        // --- LOUD DEBUGGING VOTE LOGIC ---
         async function handleVote(captionId, newValue) {
             const client = getClient();
             const { data: { user } } = await client.auth.getUser();
             if (!user) { alert("Login to vote!"); return; }
 
-            // 1. Optimistic UI update (Fast)
+            // 1. UI Update
             const countSpan = document.getElementById(`count-${captionId}`);
             let currentTotal = parseInt(countSpan.innerText) || 0;
-            const currentVoteValue = userVotes[captionId] || 0; // Get local state
+            const currentVoteValue = userVotes[captionId] || 0;
 
             if (currentVoteValue === newValue) {
-                // RESET: Remove vote
                 updateUIColors(captionId, 0);
                 countSpan.innerText = currentTotal - newValue;
                 userVotes[captionId] = 0;
             } else if (currentVoteValue === 0) {
-                // NEW: Add vote
                 updateUIColors(captionId, newValue);
                 countSpan.innerText = currentTotal + newValue;
                 userVotes[captionId] = newValue;
             } else {
-                // FLIP: Change vote (-1 to 1 or vice versa)
                 updateUIColors(captionId, newValue);
                 countSpan.innerText = currentTotal + (newValue * 2);
                 userVotes[captionId] = newValue;
             }
 
-            // 2. Database Sync (The important part)
-            // Use select().eq().eq() which returns an ARRAY, not an error if empty
+            // 2. Database Sync
             const { data: existingVotes, error: checkError } = await client
                 .from('caption_votes')
                 .select('*')
@@ -216,7 +216,7 @@
                 .eq('caption_id', captionId);
 
             if (checkError) {
-                console.error("Database Check Failed:", checkError);
+                showDebugError("DB Check Failed: " + checkError.message);
                 return;
             }
 
@@ -224,25 +224,30 @@
 
             if (existingVote) {
                 if (existingVote.value === newValue) {
-                    // DELETE (Toggle off)
+                    // DELETE
                     const { error } = await client.from('caption_votes').delete().eq('id', existingVote.id);
-                    if (error) console.error("Delete Failed:", error);
-                    else console.log("Vote removed from DB");
+                    if (error) showDebugError("DELETE FAILED: " + error.message);
                 } else {
-                    // UPDATE (Flip)
+                    // UPDATE
                     const { error } = await client.from('caption_votes').update({ value: newValue }).eq('id', existingVote.id);
-                    if (error) console.error("Update Failed:", error);
-                    else console.log("Vote updated in DB");
+                    if (error) showDebugError("UPDATE FAILED: " + error.message);
                 }
             } else {
-                // INSERT (New)
+                // INSERT (Adding Rows)
+                console.log("Attempting to INSERT row into caption_votes...");
                 const { error } = await client.from('caption_votes').insert({
                     user_id: user.id,
                     caption_id: captionId,
                     value: newValue
                 });
-                if (error) console.error("Insert Failed:", error);
-                else console.log("Vote inserted into DB");
+                
+                if (error) {
+                    showDebugError("INSERT FAILED: " + error.message);
+                    // Revert UI if failed
+                    updateUIColors(captionId, 0); 
+                } else {
+                    console.log("Success! Row added.");
+                }
             }
         }
 
@@ -256,6 +261,14 @@
 
             if (value === 1) upBtn.classList.add('active', 'up');
             if (value === -1) downBtn.classList.add('active', 'down');
+        }
+
+        function showDebugError(msg) {
+            const box = document.getElementById('debug-box');
+            const text = document.getElementById('debug-text');
+            box.style.display = 'block';
+            text.innerText = msg;
+            alert("⚠️ " + msg); // Also pop up an alert
         }
 
         renderApp()
