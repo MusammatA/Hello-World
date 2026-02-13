@@ -186,7 +186,6 @@
                 <ul>`
             
             data.forEach(item => {
-                // Generates the public URL for the images
                 const { data: { publicUrl } } = client
                     .storage
                     .from('meme_images')
@@ -196,7 +195,7 @@
                     <li>
                         <img src="${publicUrl}" class="meme-image" alt="Meme" onerror="this.style.display='none'">
                         <div class="card-content">
-                            ✨ ${item.caption || "Top Tier Meme"}
+                            ✨ ${item.content || item.caption || item.text || item.name || "Top Tier Meme"}
                             <br>
                             <small style="font-size: 0.7rem; color: #888;">ID: ${item.id.substring(0,8)}</small>
                         </div>
