@@ -19,7 +19,7 @@
         <h1>Brain Rot Central</h1>
         <p class="subtitle">Fresh from the Database</p>
 
-        <div class="search-wrapper">
+        <div class="search-wrapper" style="display: none;">
             <input type="text" id="search-input" placeholder="🔍 Search for vibes, cats, or chaos...">
         </div>
 
@@ -34,7 +34,7 @@
         
         let supabaseClient;
         let allMemes = []; 
-        let userVotes = {}; // We will store the current user's votes here
+        let userVotes = {}; // Tracks current user's votes: { caption_id: 1 (or -1) }
 
         function getClient() {
             if (!supabaseClient) {
@@ -52,13 +52,18 @@
         }
         
         async function renderApp() {
-            const container = document.getElementById('content-view')
+            const container = document.getElementById('content-view');
+            const searchBar = document.querySelector('.search-wrapper');
             const client = getClient();
             const { data: { session } } = await client.auth.getSession();
             
             if (session) {
+                // FIX: Show search bar ONLY if logged in
+                searchBar.style.display = 'block';
                 await fetchAndShowMemes(client, container, session.user);
             } else {
+                // Hide search bar if not logged in
+                searchBar.style.display = 'none';
                 container.innerHTML = `
                     <div class="auth-box">
                         <h2>Login to see the memes 🔒</h2>
@@ -69,7 +74,10 @@
             }
 
             client.auth.onAuthStateChange(async (event, currentSession) => {
-                if (currentSession) await fetchAndShowMemes(client, container, currentSession.user);
+                if (currentSession) {
+                    searchBar.style.display = 'block';
+                    await fetchAndShowMemes(client, container, currentSession.user);
+                }
             });
         }
 
@@ -87,13 +95,12 @@
             const imageMap = {};
             if (images) images.forEach(img => imageMap[img.id] = img.url);
 
-            // 3. NEW: Fetch User's Existing Votes (So we can highlight the buttons)
+            // 3. Fetch User's Existing Votes
             const { data: votes } = await client
                 .from('caption_votes')
                 .select('*')
                 .eq('user_id', user.id);
             
-            // Store votes in a simple object for lookup: { caption_id: 1 } (or -1)
             userVotes = {};
             if (votes) votes.forEach(v => userVotes[v.caption_id] = v.value);
 
@@ -130,7 +137,7 @@
                 const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
                 const displayUrl = item.imageUrl || fallbackGif;
 
-                // Check if user has voted on this specific meme
+                // Check existing vote
                 const myVote = userVotes[item.id] || 0; 
                 const upActive = myVote === 1 ? 'active up' : '';
                 const downActive = myVote === -1 ? 'active down' : '';
@@ -146,13 +153,13 @@
 
                         <div class="actions">
                             <div class="vote-controls">
-                                <button class="vote-btn ${upActive}" onclick="handleVote('${item.id}', 1)">
+                                <button class="vote-btn ${upActive} up-btn" onclick="handleVote('${item.id}', 1)">
                                     <i class="fa-solid fa-arrow-up"></i>
                                 </button>
                                 
                                 <span class="vote-count" id="count-${item.id}">${item.votes || 0}</span>
                                 
-                                <button class="vote-btn ${downActive}" onclick="handleVote('${item.id}', -1)">
+                                <button class="vote-btn ${downActive} down-btn" onclick="handleVote('${item.id}', -1)">
                                     <i class="fa-solid fa-arrow-down"></i>
                                 </button>
                             </div>
@@ -163,63 +170,72 @@
             container.innerHTML = html + `</ul>`;
         }
 
-        // --- THE MUTATION LOGIC (Assignment Requirement) ---
+        // --- FIXED VOTE LOGIC: TOGGLE & RESET ---
         async function handleVote(captionId, newValue) {
             const client = getClient();
-            
-            // 1. Get current user
             const { data: { user } } = await client.auth.getUser();
-            if (!user) { alert("Please login to vote!"); return; }
+            if (!user) { alert("Login to vote!"); return; }
 
-            // 2. Check if we already voted on this caption
-            const { data: existingVote } = await client
-                .from('caption_votes')
-                .select('*')
-                .eq('user_id', user.id)
-                .eq('caption_id', captionId)
-                .single(); // .single() returns one object or null
+            // 1. Get current state from our local variable (faster than DB query)
+            const currentVoteValue = userVotes[captionId] || 0;
+            const countSpan = document.getElementById(`count-${captionId}`);
+            let currentTotal = parseInt(countSpan.innerText) || 0;
 
-            try {
-                if (existingVote) {
-                    // SCENARIO A: We voted before.
-                    if (existingVote.value === newValue) {
-                        // If we clicked the SAME button, we remove the vote (Toggle off)
-                        await client.from('caption_votes').delete().eq('id', existingVote.id);
-                        console.log("Vote removed!");
-                        updateLocalUI(captionId, 0); // Reset UI
-                    } else {
-                        // If we clicked the OPPOSITE button, we update the vote (Flip)
-                        await client.from('caption_votes').update({ value: newValue }).eq('id', existingVote.id);
-                        console.log("Vote updated!");
-                        updateLocalUI(captionId, newValue); // Update UI
-                    }
-                } else {
-                    // SCENARIO B: No previous vote. Create a new one.
-                    await client.from('caption_votes').insert({
-                        user_id: user.id,
-                        caption_id: captionId,
-                        value: newValue
-                    });
-                    console.log("Vote added!");
-                    updateLocalUI(captionId, newValue); // Update UI
+            // 2. Optimistic UI Update (Update screen BEFORE database finishes)
+            if (currentVoteValue === newValue) {
+                // RESET CASE: User clicked the same button again. Remove vote.
+                // If I upvoted (+1) and click up again, remove it (-1 from total)
+                updateUIColors(captionId, 0);
+                countSpan.innerText = currentTotal - newValue; 
+                userVotes[captionId] = 0; // Reset local state
+
+                // DB: Delete the row
+                await client.from('caption_votes').delete()
+                    .eq('user_id', user.id)
+                    .eq('caption_id', captionId);
+            
+            } else if (currentVoteValue === 0) {
+                // NEW VOTE CASE: No previous vote. Add it.
+                updateUIColors(captionId, newValue);
+                countSpan.innerText = currentTotal + newValue;
+                userVotes[captionId] = newValue;
+
+                // DB: Insert new row
+                await client.from('caption_votes').insert({
+                    user_id: user.id,
+                    caption_id: captionId,
+                    value: newValue
+                });
+
+            } else {
+                // SWAP CASE: User switched from Up to Down (or vice versa).
+                // If I was Up (+1) and go Down (-1), total changes by -2.
+                updateUIColors(captionId, newValue);
+                countSpan.innerText = currentTotal + (newValue * 2); 
+                userVotes[captionId] = newValue;
+
+                // DB: Update existing row
+                // We need to find the specific vote ID first or use match logic
+                const { data: existing } = await client.from('caption_votes')
+                    .select('id').eq('user_id', user.id).eq('caption_id', captionId).single();
+                
+                if (existing) {
+                    await client.from('caption_votes').update({ value: newValue }).eq('id', existing.id);
                 }
-            } catch (error) {
-                console.error("Mutation failed:", error);
-                alert("Something went wrong with the vote!");
             }
         }
 
-        // Helper to update the button colors immediately (Optimistic UI)
-        function updateLocalUI(captionId, value) {
+        // Helper to toggle CSS classes
+        function updateUIColors(captionId, value) {
             const card = document.getElementById(`card-${captionId}`);
-            const upBtn = card.querySelector('.fa-arrow-up').parentElement;
-            const downBtn = card.querySelector('.fa-arrow-down').parentElement;
+            const upBtn = card.querySelector('.up-btn');
+            const downBtn = card.querySelector('.down-btn');
 
-            // Reset classes
-            upBtn.className = 'vote-btn';
-            downBtn.className = 'vote-btn';
+            // Reset
+            upBtn.classList.remove('active', 'up');
+            downBtn.classList.remove('active', 'down');
 
-            // Apply new active class
+            // Set Active
             if (value === 1) upBtn.classList.add('active', 'up');
             if (value === -1) downBtn.classList.add('active', 'down');
         }
