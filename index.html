@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brain Rot Central - Debug Mode</title>
+    <title>Brain Rot Central</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -99,21 +99,18 @@
             if (images) images.forEach(img => imageMap[img.id] = img.url);
 
             // 3. Fetch User's Existing Votes
-            // We select ALL columns to see if 'value' is actually the right name
+            // FIX: Changed 'user_id' to 'profile_id'
             const { data: votes, error: voteError } = await client
                 .from('caption_votes')
                 .select('*')
-                .eq('user_id', user.id);
+                .eq('profile_id', user.id); 
             
-            if (voteError) {
-                console.error("Vote Fetch Error:", voteError);
-                // If this fails, the table might not permit reading
-            }
+            if (voteError) console.error("Error fetching votes:", voteError);
 
             userVotes = {};
             if (votes) votes.forEach(v => userVotes[v.caption_id] = v.value);
 
-            // 4. Merge & Render
+            // 4. Merge Data
             allMemes = captions.map(item => ({
                 ...item,
                 imageUrl: imageMap[item.image_id] || null
@@ -183,13 +180,13 @@
             container.innerHTML = html + `</ul>`;
         }
 
-        // --- LOUD DEBUGGING VOTE LOGIC ---
+        // --- FIXED VOTE LOGIC WITH CORRECT COLUMN NAME ---
         async function handleVote(captionId, newValue) {
             const client = getClient();
             const { data: { user } } = await client.auth.getUser();
             if (!user) { alert("Login to vote!"); return; }
 
-            // 1. UI Update
+            // 1. UI Update (Visual only)
             const countSpan = document.getElementById(`count-${captionId}`);
             let currentTotal = parseInt(countSpan.innerText) || 0;
             const currentVoteValue = userVotes[captionId] || 0;
@@ -209,14 +206,15 @@
             }
 
             // 2. Database Sync
+            // FIX: Using 'profile_id' instead of 'user_id'
             const { data: existingVotes, error: checkError } = await client
                 .from('caption_votes')
                 .select('*')
-                .eq('user_id', user.id)
+                .eq('profile_id', user.id)
                 .eq('caption_id', captionId);
 
             if (checkError) {
-                showDebugError("DB Check Failed: " + checkError.message);
+                showDebugError("DB Check Error: " + checkError.message);
                 return;
             }
 
@@ -233,20 +231,19 @@
                     if (error) showDebugError("UPDATE FAILED: " + error.message);
                 }
             } else {
-                // INSERT (Adding Rows)
-                console.log("Attempting to INSERT row into caption_votes...");
+                // INSERT
+                // FIX: Inserting with 'profile_id'
                 const { error } = await client.from('caption_votes').insert({
-                    user_id: user.id,
+                    profile_id: user.id, // Corrected from user_id
                     caption_id: captionId,
                     value: newValue
                 });
                 
                 if (error) {
                     showDebugError("INSERT FAILED: " + error.message);
-                    // Revert UI if failed
                     updateUIColors(captionId, 0); 
                 } else {
-                    console.log("Success! Row added.");
+                    console.log("Vote successfully recorded.");
                 }
             }
         }
@@ -268,7 +265,7 @@
             const text = document.getElementById('debug-text');
             box.style.display = 'block';
             text.innerText = msg;
-            alert("⚠️ " + msg); // Also pop up an alert
+            alert("⚠️ " + msg);
         }
 
         renderApp()
