@@ -154,7 +154,6 @@
                     </div>`;
             }
 
-            // Listen for changes
             client.auth.onAuthStateChange(async (event, currentSession) => {
                 if (currentSession) {
                     await showMemes(client, container);
@@ -162,9 +161,8 @@
             });
         }
 
-        // --- UPDATED SHOWMEMES FUNCTION ---
+        // --- THE "X-RAY" VERSION OF SHOWMEMES ---
         async function showMemes(client, container) {
-            // 1. CHANGE 'images' TO 'captions' TO MATCH YOUR OLD CODE
             const { data, error } = await client.from('captions').select('*')
             
             if (error) {
@@ -188,19 +186,14 @@
                 <ul>`
             
             data.forEach(item => {
-                // We assume the ID in the captions table matches the image filename in the bucket
-                const { data: { publicUrl } } = client
-                    .storage
-                    .from('meme_images')
-                    .getPublicUrl(`${item.id}.jpg`);
-
+                // We are intentionally printing the raw data here so you can see the column names
                 html += `
                     <li>
-                        <img src="${publicUrl}" class="meme-image" alt="Meme" onerror="this.style.display='none'">
                         <div class="card-content">
-                            ✨ ${item.content || "Top Tier Meme"}
-                            <br>
-                            <small style="font-size: 0.7rem; color: #888;">ID: ${item.id.substring(0,8)}</small>
+                            ✨ ${item.content || "Text Missing"}
+                            <hr style="margin: 15px 0; border: 1px dashed #ccc;">
+                            <p style="font-weight: bold; color: #d14;">🔍 DATA X-RAY:</p>
+                            <pre style="background: #eee; padding: 10px; font-size: 0.8rem; overflow-x: auto;">${JSON.stringify(item, null, 2)}</pre>
                         </div>
                     </li>`
             })
