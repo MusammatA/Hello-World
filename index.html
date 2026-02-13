@@ -161,9 +161,10 @@
             });
         }
 
-        // --- FINAL WORKING VERSION ---
+        // --- X-RAY DEBUGGING MODE ---
         async function showMemes(client, container) {
-            const { data, error } = await client.from('captions').select('*')
+            // We switch to 'images' to see the file extensions
+            const { data, error } = await client.from('images').select('*')
             
             if (error) {
                 container.innerHTML = `<p style="color: red; text-align: center;">Error: ${error.message}</p>`;
@@ -183,22 +184,17 @@
                 <div style="text-align: right; margin-bottom: 20px;">
                     <button class="vote-btn" onclick="getClient().auth.signOut().then(() => location.reload())">Logout</button>
                 </div>
+                <p style="text-align: center; background: #eee; padding: 10px; border-radius: 8px;">
+                    👇 Look below: Find the key that looks like a filename (e.g. "name", "suffix", "file_type")
+                </p>
                 <ul>`
             
             data.forEach(item => {
-                // 1. KEY FIX: Using 'image_id' because 'id' belongs to the caption, not the image
-                const { data: { publicUrl } } = client
-                    .storage
-                    .from('meme_images')
-                    .getPublicUrl(`${item.image_id}.jpg`);
-
                 html += `
                     <li>
-                        <img src="${publicUrl}" class="meme-image" alt="Meme" onerror="this.style.display='none'">
                         <div class="card-content">
-                            ✨ ${item.content}
-                            <br>
-                            <small style="font-size: 0.7rem; color: #888;">ID: ${item.id.substring(0,8)}</small>
+                            <p style="font-weight: bold; color: #d14;">🔍 IMAGES TABLE X-RAY:</p>
+                            <pre style="background: #eee; padding: 10px; font-size: 0.8rem; overflow-x: auto;">${JSON.stringify(item, null, 2)}</pre>
                         </div>
                     </li>`
             })
