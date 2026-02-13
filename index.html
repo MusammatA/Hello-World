@@ -18,8 +18,9 @@
         <h1>Brain Rot Central</h1>
         <p class="subtitle">Fresh from the Database</p>
 
-        <div style="text-align: right; font-size: 0.8rem; color: #888; margin-bottom: 10px;">
-            DB Status: <span id="db-status">Connecting...</span> <span id="db-dot" style="height: 10px; width: 10px; background-color: grey; border-radius: 50%; display: inline-block;"></span>
+        <div style="background:#f0f0f0; padding:10px; border-radius:8px; margin-bottom:20px; font-size:0.8rem; font-family:monospace;">
+            <div><strong>DB Status:</strong> <span id="db-status">Connecting...</span> <span id="db-dot" style="height:10px; width:10px; background:grey; border-radius:50%; display:inline-block;"></span></div>
+            <div id="last-error" style="color:red; margin-top:5px;"></div>
         </div>
 
         <div class="search-wrapper" style="display: none;">
@@ -87,7 +88,7 @@
             // 1. Fetch Captions
             const { data: captions, error } = await client.from('captions').select('*');
             if (error) {
-                container.innerHTML = `<p>Error loading vibes.</p>`;
+                container.innerHTML = `<p>Error: ${error.message}</p>`;
                 return;
             }
 
@@ -97,71 +98,52 @@
             const imageMap = {};
             if (images) images.forEach(img => imageMap[img.id] = img.url);
 
-            // 3. Fetch ALL Votes (THE MATH PART)
+            // 3. Fetch Votes & Calculate
             const { data: allVotes, error: voteError } = await client.from('caption_votes').select('*');
             
-            // Debug Indicator Logic
+            // Debug UI Update
             const statusText = document.getElementById('db-status');
             const statusDot = document.getElementById('db-dot');
 
             if (voteError) {
-                console.error("Critical Vote Fetch Error:", voteError);
                 statusText.innerText = "Error Fetching Votes";
                 statusDot.style.backgroundColor = "red";
+                document.getElementById('last-error').innerText = voteError.message;
             } else if (!allVotes || allVotes.length === 0) {
-                console.warn("No votes found. DB is empty or RLS is blocking access.");
-                statusText.innerText = "0 Votes Found (Empty or Locked)";
+                statusText.innerText = "0 Votes Found (Empty/RLS)";
                 statusDot.style.backgroundColor = "orange";
             } else {
-                console.log(`Success! Loaded ${allVotes.length} votes.`);
                 statusText.innerText = `Loaded ${allVotes.length} Votes`;
-                statusDot.style.backgroundColor = "#4CAF50"; // Green
+                statusDot.style.backgroundColor = "#4CAF50";
             }
 
-            // Calculate Totals
             voteStats = {};
             if (allVotes) {
                 allVotes.forEach(v => {
                     if (!voteStats[v.caption_id]) {
                         voteStats[v.caption_id] = { total: 0, myVote: 0 };
                     }
-                    
-                    // FORCE NUMBER TYPE to avoid string concatenation bugs
-                    const val = parseInt(v.vote_value); 
-                    
+                    const val = parseInt(v.vote_value);
                     voteStats[v.caption_id].total += val;
-
                     if (v.profile_id === user.id) {
                         voteStats[v.caption_id].myVote = val;
                     }
                 });
             }
 
-            // 4. Merge Data
+            // 4. Merge & Render
             allMemes = captions.map(item => ({
                 ...item,
                 imageUrl: imageMap[item.image_id] || null
             }));
 
             renderGrid(allMemes, container);
-
-            // Search Listener
-            const searchInput = document.getElementById('search-input');
-            const newSearch = searchInput.cloneNode(true);
-            searchInput.parentNode.replaceChild(newSearch, searchInput);
-            
-            newSearch.addEventListener('input', (e) => {
-                const searchTerm = e.target.value.toLowerCase();
-                const filtered = allMemes.filter(meme => 
-                    meme.content && meme.content.toLowerCase().includes(searchTerm)
-                );
-                renderGrid(filtered, container);
-            });
+            setupSearch(allMemes, container);
         }
 
         function renderGrid(memes, container) {
             if (memes.length === 0) {
-                container.innerHTML = `<p style="text-align:center;">No vibes found. 😔</p>`;
+                container.innerHTML = `<p style="text-align:center;">No vibes found.</p>`;
                 return;
             }
 
@@ -174,8 +156,7 @@
             memes.forEach(item => {
                 const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
                 const displayUrl = item.imageUrl || fallbackGif;
-
-                // Get stats
+                
                 const stats = voteStats[item.id] || { total: 0, myVote: 0 };
                 const upActive = stats.myVote === 1 ? 'active up' : '';
                 const downActive = stats.myVote === -1 ? 'active down' : '';
@@ -191,13 +172,13 @@
 
                         <div class="actions">
                             <div class="vote-controls">
-                                <button class="vote-btn ${upActive} up-btn" onclick="handleVote('${item.id}', 1)">
+                                <button class="vote-btn ${upActive} up-btn" onclick="handleVoteSafe('${item.id}', 1)">
                                     <i class="fa-solid fa-arrow-up"></i>
                                 </button>
                                 
                                 <span class="vote-count" id="count-${item.id}">${stats.total}</span>
                                 
-                                <button class="vote-btn ${downActive} down-btn" onclick="handleVote('${item.id}', -1)">
+                                <button class="vote-btn ${downActive} down-btn" onclick="handleVoteSafe('${item.id}', -1)">
                                     <i class="fa-solid fa-arrow-down"></i>
                                 </button>
                             </div>
@@ -208,74 +189,104 @@
             container.innerHTML = html + `</ul>`;
         }
 
-        async function handleVote(captionId, newValue) {
+        function setupSearch(memes, container) {
+            const searchInput = document.getElementById('search-input');
+            const newSearch = searchInput.cloneNode(true);
+            searchInput.parentNode.replaceChild(newSearch, searchInput);
+            newSearch.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                const filtered = memes.filter(m => m.content && m.content.toLowerCase().includes(term));
+                renderGrid(filtered, container);
+            });
+        }
+
+        // --- SAFETY-WRAPPED VOTING ---
+        async function handleVoteSafe(captionId, newValue) {
+            try {
+                await handleVoteLogic(captionId, newValue);
+            } catch (err) {
+                console.error(err);
+                alert("Vote Error: " + err.message);
+                document.getElementById('last-error').innerText = "Last Error: " + err.message;
+            }
+        }
+
+        async function handleVoteLogic(captionId, newValue) {
             const client = getClient();
             const { data: { user } } = await client.auth.getUser();
-            if (!user) { alert("Login to vote!"); return; }
+            if (!user) { alert("Login first!"); return; }
 
-            // UI Optimistic Update
+            // 1. Optimistic UI Update
             const countSpan = document.getElementById(`count-${captionId}`);
+            if (!countSpan) throw new Error("Could not find count element");
+            
             let currentTotal = parseInt(countSpan.innerText) || 0;
             
+            // Ensure stats exist locally
             if (!voteStats[captionId]) voteStats[captionId] = { total: 0, myVote: 0 };
             const currentVoteValue = voteStats[captionId].myVote;
 
+            // Calculate new UI state
             if (currentVoteValue === newValue) {
-                // RESET
                 updateUIColors(captionId, 0);
                 countSpan.innerText = currentTotal - newValue;
                 voteStats[captionId].myVote = 0;
             } else if (currentVoteValue === 0) {
-                // NEW
                 updateUIColors(captionId, newValue);
                 countSpan.innerText = currentTotal + newValue;
                 voteStats[captionId].myVote = newValue;
             } else {
-                // FLIP
                 updateUIColors(captionId, newValue);
                 countSpan.innerText = currentTotal + (newValue * 2);
                 voteStats[captionId].myVote = newValue;
             }
 
-            // Database Sync
-            // 1. Check for existing vote
-            const { data: existingVotes } = await client
+            // 2. Database Sync
+            const { data: existingVotes, error: fetchErr } = await client
                 .from('caption_votes')
                 .select('*')
                 .eq('profile_id', user.id)
                 .eq('caption_id', captionId);
 
+            if (fetchErr) throw new Error("DB Fetch failed: " + fetchErr.message);
+
             const existingVote = existingVotes && existingVotes.length > 0 ? existingVotes[0] : null;
 
             if (existingVote) {
                 if (existingVote.vote_value === newValue) {
-                    await client.from('caption_votes').delete().eq('id', existingVote.id);
+                    const { error } = await client.from('caption_votes').delete().eq('id', existingVote.id);
+                    if (error) throw new Error("Delete failed: " + error.message);
                 } else {
-                    await client.from('caption_votes').update({ vote_value: newValue }).eq('id', existingVote.id);
+                    const { error } = await client.from('caption_votes').update({ vote_value: newValue }).eq('id', existingVote.id);
+                    if (error) throw new Error("Update failed: " + error.message);
                 }
             } else {
                 const { error } = await client.from('caption_votes').insert({
                     profile_id: user.id,
                     caption_id: captionId,
-                    vote_value: newValue 
+                    vote_value: newValue
                 });
                 if (error) {
-                    console.error("Insert Failed:", error);
+                    // Revert UI on insert failure
                     updateUIColors(captionId, 0);
+                    countSpan.innerText = currentTotal; // Reset number
+                    voteStats[captionId].myVote = 0; 
+                    throw new Error("Insert failed: " + error.message);
                 }
             }
         }
 
         function updateUIColors(captionId, value) {
             const card = document.getElementById(`card-${captionId}`);
+            if (!card) return;
             const upBtn = card.querySelector('.up-btn');
             const downBtn = card.querySelector('.down-btn');
+            
+            if (upBtn) upBtn.classList.remove('active', 'up');
+            if (downBtn) downBtn.classList.remove('active', 'down');
 
-            upBtn.classList.remove('active', 'up');
-            downBtn.classList.remove('active', 'down');
-
-            if (value === 1) upBtn.classList.add('active', 'up');
-            if (value === -1) downBtn.classList.add('active', 'down');
+            if (value === 1 && upBtn) upBtn.classList.add('active', 'up');
+            if (value === -1 && downBtn) downBtn.classList.add('active', 'down');
         }
 
         renderApp()
