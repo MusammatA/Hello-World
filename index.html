@@ -38,7 +38,10 @@
         
         let supabaseClient;
         let allMemes = []; 
-        let voteStats = {}; 
+        let voteStats = {};
+        
+        // --- NEW GLOBAL USER VARIABLE ---
+        let CURRENT_USER_ID = null; 
 
         function getClient() {
             if (!supabaseClient) {
@@ -70,11 +73,15 @@
             const searchBar = document.querySelector('.search-wrapper');
             const client = getClient();
             
+            // 1. Get Session ONCE at startup
             const { data: { session } } = await client.auth.getSession();
             
             if (session) {
+                // SAVE USER ID GLOBALLY (Critical Fix)
+                CURRENT_USER_ID = session.user.id;
+                
                 searchBar.style.display = 'block'; 
-                await fetchAndShowMemes(client, container, session.user);
+                await fetchAndShowMemes(client, container);
             } else {
                 searchBar.style.display = 'none'; 
                 container.innerHTML = `
@@ -88,13 +95,15 @@
 
             client.auth.onAuthStateChange(async (event, currentSession) => {
                 if (currentSession) {
+                    CURRENT_USER_ID = currentSession.user.id;
                     searchBar.style.display = 'block';
-                    await fetchAndShowMemes(client, container, currentSession.user);
+                    await fetchAndShowMemes(client, container);
                 }
             });
         }
 
-        async function fetchAndShowMemes(client, container, user) {
+        async function fetchAndShowMemes(client, container) {
+            logMsg(`Logged in as User: ${CURRENT_USER_ID}`);
             logMsg("Loading Memes...");
 
             // 1. Fetch Captions
@@ -107,29 +116,25 @@
             const imageMap = {};
             if (images) images.forEach(img => imageMap[img.id] = img.url);
 
-            // 3. Fetch MY VOTES
+            // 3. Fetch MY VOTES using Global ID
             const { data: myVotes } = await client
                 .from('caption_votes')
                 .select('*')
-                .eq('profile_id', user.id);
+                .eq('profile_id', CURRENT_USER_ID);
 
             logMsg(`Loaded ${myVotes ? myVotes.length : 0} of your votes.`);
 
-            // 4. Fetch Global Totals (Limit 1000)
+            // 4. Fetch Global Totals
             const { data: allVotes } = await client.from('caption_votes').select('caption_id, vote_value').limit(1000);
 
             // 5. Calculate Stats
             voteStats = {};
-            
-            // Global totals
             if (allVotes) {
                 allVotes.forEach(v => {
                     if (!voteStats[v.caption_id]) voteStats[v.caption_id] = { total: 0, myVote: 0 };
                     voteStats[v.caption_id].total += parseInt(v.vote_value);
                 });
             }
-
-            // My votes (Overwrite local state for accuracy)
             if (myVotes) {
                 myVotes.forEach(v => {
                     if (!voteStats[v.caption_id]) voteStats[v.caption_id] = { total: 0, myVote: 0 };
@@ -207,20 +212,14 @@
             });
         }
 
-        // --- FIXED VOTE HANDLER (Uses getSession to prevent hang) ---
+        // --- INSTANT VOTE HANDLER ---
         async function handleVote(captionId, newValue) {
+            // No await here! We use the global variable.
+            if (!CURRENT_USER_ID) { alert("Login first!"); return; }
+
             try {
                 const client = getClient();
-                logMsg(`Click processing for ${captionId.substring(0,4)}...`);
-
-                // FIX: Use getSession() instead of getUser()
-                const { data: { session } } = await client.auth.getSession();
-                
-                if (!session || !session.user) { 
-                    alert("Please login first!"); 
-                    return; 
-                }
-                const user = session.user;
+                logMsg(`Processing vote for ${captionId.substring(0,4)}...`);
 
                 // UI Logic
                 const countSpan = document.getElementById(`count-${captionId}`);
@@ -243,11 +242,11 @@
                     voteStats[captionId].myVote = newValue;
                 }
 
-                // DB Logic
+                // DB Logic using CURRENT_USER_ID
                 const { data: existingVotes, error: checkError } = await client
                     .from('caption_votes')
                     .select('*')
-                    .eq('profile_id', user.id)
+                    .eq('profile_id', CURRENT_USER_ID)
                     .eq('caption_id', captionId);
 
                 if (checkError) throw checkError;
@@ -266,13 +265,13 @@
                     }
                 } else {
                     const { error } = await client.from('caption_votes').insert({
-                        profile_id: user.id,
+                        profile_id: CURRENT_USER_ID,
                         caption_id: captionId,
                         vote_value: newValue
                     });
                     if (error) {
                         logMsg("Insert Failed: " + error.message, "red");
-                        updateUIColors(captionId, 0); // Revert
+                        updateUIColors(captionId, 0); 
                     } else {
                         logMsg("New Vote Added (Saved)", "#0f0");
                     }
