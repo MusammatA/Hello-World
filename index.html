@@ -162,12 +162,14 @@
             });
         }
 
+        // --- UPDATED SHOWMEMES FUNCTION ---
         async function showMemes(client, container) {
-            const { data, error } = await client.from('images').select('*')
+            // 1. CHANGE 'images' TO 'captions' TO MATCH YOUR OLD CODE
+            const { data, error } = await client.from('captions').select('*')
             
             if (error) {
                 container.innerHTML = `<p style="color: red; text-align: center;">Error: ${error.message}</p>`;
-                return
+                return;
             }
 
             if (!data || data.length === 0) {
@@ -186,6 +188,7 @@
                 <ul>`
             
             data.forEach(item => {
+                // We assume the ID in the captions table matches the image filename in the bucket
                 const { data: { publicUrl } } = client
                     .storage
                     .from('meme_images')
@@ -195,7 +198,7 @@
                     <li>
                         <img src="${publicUrl}" class="meme-image" alt="Meme" onerror="this.style.display='none'">
                         <div class="card-content">
-                            ✨ ${item.content || item.caption || item.text || item.name || "Top Tier Meme"}
+                            ✨ ${item.content || "Top Tier Meme"}
                             <br>
                             <small style="font-size: 0.7rem; color: #888;">ID: ${item.id.substring(0,8)}</small>
                         </div>
