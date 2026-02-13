@@ -125,27 +125,19 @@
 
         async function signIn() {
             const client = getClient();
-            // await client.auth.signInWithOAuth({
-            //     provider: 'google',
-            //     options: {
-            //         redirectTo: window.location.origin + '/auth/callback'
-            //     }
-            // })
             await client.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
+                    // This matches your successful login path
                     redirectTo: window.location.origin + '/auth/callback'
                 }
             })
-
         }
         
-        // --- NEW PROACTIVE LOGIC ---
         async function renderApp() {
             const container = document.getElementById('content-view')
             const client = getClient();
 
-            // This listener solves the "flicker" by watching for the session to arrive
             client.auth.onAuthStateChange(async (event, session) => {
                 if (session) {
                     await showMemes(client, container);
@@ -162,11 +154,26 @@
         }
 
         async function showMemes(client, container) {
+            // Diagnostic log
+            console.log("Fetching memes from Supabase...");
+            
             const { data, error } = await client.from('images').select('*')
             
             if (error) {
-                container.innerHTML = `<p>Error: ${error.message}</p>`
+                console.error("Database Error:", error);
+                container.innerHTML = `<p style="color: red; text-align: center;">Error: ${error.message}</p>`;
                 return
+            }
+
+            // Check if data is empty (likely due to RLS policies Michael mentioned)
+            if (!data || data.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center;">
+                        <p>The vibes are empty! (0 memes found)</p>
+                        <p style="font-size: 0.9rem;">This might be due to Row Level Security (RLS) settings.</p>
+                        <button class="vote-btn" onclick="getClient().auth.signOut().then(() => location.reload())">Logout</button>
+                    </div>`;
+                return;
             }
 
             let html = `
