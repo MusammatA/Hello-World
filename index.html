@@ -9,104 +9,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
-
-    <style>
-        :root {
-            --bg-color: #FFF8F0;
-            --card-bg: #FFFFFF;
-            --text-main: #2D2424;
-            --accent-pink: #FF8BA7;
-            --accent-green: #D4E09B;
-        }
-
-        body {
-            font-family: 'Quicksand', sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            margin: 0;
-            padding: 40px 20px;
-            background-image: radial-gradient(var(--accent-pink) 2px, transparent 2px);
-            background-size: 30px 30px;
-        }
-
-        .container { max-width: 700px; margin: 0 auto; }
-
-        h1 {
-            font-family: 'Fraunces', serif;
-            font-weight: 600;
-            font-size: 3.5rem;
-            text-align: center;
-            margin-bottom: 10px;
-            text-shadow: 3px 3px 0px var(--accent-green);
-        }
-
-        p.subtitle {
-            text-align: center;
-            font-size: 1.2rem;
-            margin-bottom: 50px;
-            background: var(--accent-green);
-            display: inline-block;
-            padding: 5px 15px;
-            border-radius: 20px;
-            border: 2px solid var(--text-main);
-            position: relative;
-            left: 50%;
-            transform: translateX(-50%);
-            box-shadow: 4px 4px 0px var(--text-main);
-        }
-
-        ul { list-style: none; padding: 0; display: grid; gap: 25px; }
-
-        li {
-            background: var(--card-bg);
-            border: 3px solid var(--text-main);
-            border-radius: 16px;
-            overflow: hidden; 
-            box-shadow: 6px 6px 0px var(--text-main);
-            transition: all 0.2s ease;
-        }
-
-        .meme-image {
-            width: 100%;
-            height: auto;
-            border-bottom: 3px solid var(--text-main);
-            display: block;
-            min-height: 100px;
-            background: #f9f9f9;
-        }
-
-        .card-content {
-            padding: 30px;
-            font-size: 1.3rem;
-            line-height: 1.5;
-            border-bottom: 2px solid var(--text-main);
-        }
-
-        .vote-btn {
-            background: none;
-            border: 2px solid var(--text-main);
-            border-radius: 50px;
-            padding: 8px 16px;
-            font-family: 'Quicksand', sans-serif;
-            font-weight: 700;
-            cursor: pointer;
-        }
-
-        .auth-box {
-            background: white;
-            border: 3px solid var(--text-main);
-            border-radius: 16px;
-            padding: 40px;
-            text-align: center;
-            box-shadow: 6px 6px 0px var(--text-main);
-        }
-    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <link rel="stylesheet" href="styles.css"> 
 </head>
 <body>
 
     <div class="container">
         <h1>Brain Rot Central</h1>
         <p class="subtitle">Fresh from the Database</p>
+
+        <div class="search-wrapper">
+            <input type="text" id="search-input" placeholder="🔍 Search for vibes, cats, or chaos...">
+        </div>
+
         <div id="content-view">
             <p style="text-align: center;">Loading the vibes...</p>
         </div>
@@ -117,6 +33,7 @@
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpaHNnbmZqcW1ram1vb3d5ZmJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk1Mjc0MDAsImV4cCI6MjA2NTEwMzQwMH0.c9UQS_o2bRygKOEdnuRx7x7PeSf_OUGDtf9l3fMqMSQ'
         
         let supabaseClient;
+        let allMemes = []; 
 
         function getClient() {
             if (!supabaseClient) {
@@ -129,88 +46,132 @@
             const client = getClient();
             await client.auth.signInWithOAuth({
                 provider: 'google',
-                options: {
-                    redirectTo: window.location.origin + '/auth/callback'
-                }
+                options: { redirectTo: window.location.origin + '/auth/callback' }
             })
         }
         
         async function renderApp() {
             const container = document.getElementById('content-view')
             const client = getClient();
-
-            // Check session immediately
             const { data: { session } } = await client.auth.getSession();
             
             if (session) {
-                await showMemes(client, container);
+                await fetchAndShowMemes(client, container);
             } else {
                 container.innerHTML = `
                     <div class="auth-box">
                         <h2>Login to see the memes 🔒</h2>
-                        <button class="vote-btn" onclick="signIn()" style="margin: 20px auto;">
+                        <button onclick="signIn()" style="margin-top:20px; padding:10px 20px; cursor:pointer;">
                             Login with Google
                         </button>
                     </div>`;
             }
 
             client.auth.onAuthStateChange(async (event, currentSession) => {
-                if (currentSession) {
-                    await showMemes(client, container);
-                }
+                if (currentSession) await fetchAndShowMemes(client, container);
             });
         }
 
-        // --- FINAL WORKING SHOWMEMES FUNCTION ---
-        async function showMemes(client, container) {
-            // 1. First, get the CAPTIONS (which hold the text)
+        async function fetchAndShowMemes(client, container) {
             const { data: captions, error } = await client.from('captions').select('*');
-            
-            if (error) {
-                container.innerHTML = `<p style="color: red; text-align: center;">Error: ${error.message}</p>`;
+            if (error || !captions) {
+                container.innerHTML = `<p>Error loading vibes.</p>`;
                 return;
             }
 
-            if (!captions || captions.length === 0) {
-                container.innerHTML = `<div style="text-align: center;">The vibes are empty!</div>`;
-                return;
-            }
-
-            // 2. Extract the Image IDs from the captions
             const imageIds = captions.map(c => c.image_id);
-            
-            // 3. Fetch the IMAGES table to get the 'url' field we found with X-Ray
             const { data: images } = await client.from('images').select('id, url').in('id', imageIds);
-
-            // Create a lookup map: { image_id: "https://..." }
+            
             const imageMap = {};
-            if (images) {
-                images.forEach(img => {
-                    imageMap[img.id] = img.url;
-                });
+            if (images) images.forEach(img => imageMap[img.id] = img.url);
+
+            allMemes = captions.map(item => ({
+                ...item,
+                imageUrl: imageMap[item.image_id] || null
+            }));
+
+            renderGrid(allMemes, container);
+
+            document.getElementById('search-input').addEventListener('input', (e) => {
+                const searchTerm = e.target.value.toLowerCase();
+                const filtered = allMemes.filter(meme => 
+                    meme.content && meme.content.toLowerCase().includes(searchTerm)
+                );
+                renderGrid(filtered, container);
+            });
+        }
+
+        function renderGrid(memes, container) {
+            if (memes.length === 0) {
+                container.innerHTML = `<p style="text-align:center;">No vibes found matching that search. 😔</p>`;
+                return;
             }
 
             let html = `
                 <div style="text-align: right; margin-bottom: 20px;">
-                    <button class="vote-btn" onclick="getClient().auth.signOut().then(() => location.reload())">Logout</button>
+                    <button onclick="getClient().auth.signOut().then(() => location.reload())" style="cursor:pointer; padding:5px 10px;">Logout</button>
                 </div>
                 <ul>`;
             
-            captions.forEach(item => {
-                // 4. Use the URL from the database map!
-                const imageUrl = imageMap[item.image_id] || "https://via.placeholder.com/400x300?text=Image+Missing";
+            memes.forEach(item => {
+                const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
+                const displayUrl = item.imageUrl || fallbackGif;
 
                 html += `
-                    <li>
-                        <img src="${imageUrl}" class="meme-image" alt="Meme" onerror="this.src='https://via.placeholder.com/400?text=Error+Loading'">
+                    <li id="card-${item.id}">
+                        <img src="${displayUrl}" class="meme-image" alt="Meme" 
+                             onerror="this.onerror=null; this.src='${fallbackGif}';">
+                        
                         <div class="card-content">
                             ✨ ${item.content}
-                            <br>
-                            <small style="font-size: 0.7rem; color: #888;">ID: ${item.id.substring(0,8)}</small>
+                        </div>
+
+                        <div class="actions">
+                            <button class="like-btn" onclick="toggleLike('${item.id}')">
+                                <i class="fa-solid fa-heart"></i> 
+                                <span id="likes-${item.id}">${item.like_count || 0}</span>
+                            </button>
+                            <small style="color:#aaa;">ID: ${item.id.substring(0,4)}</small>
+                        </div>
+
+                        <div class="comments-section">
+                            <div class="comment-list" id="comments-${item.id}"></div>
+                            <div class="comment-input-group">
+                                <input type="text" class="comment-input" id="input-${item.id}" placeholder="Say something...">
+                                <button class="post-btn" onclick="postComment('${item.id}')">Post</button>
+                            </div>
                         </div>
                     </li>`;
             });
             container.innerHTML = html + `</ul>`;
+        }
+
+        function toggleLike(id) {
+            const btn = document.querySelector(`#card-${id} .like-btn`);
+            const countSpan = document.getElementById(`likes-${id}`);
+            
+            btn.classList.toggle('liked');
+            let current = parseInt(countSpan.innerText);
+            
+            if (btn.classList.contains('liked')) {
+                countSpan.innerText = current + 1;
+            } else {
+                countSpan.innerText = current - 1;
+            }
+        }
+
+        function postComment(id) {
+            const input = document.getElementById(`input-${id}`);
+            const list = document.getElementById(`comments-${id}`);
+            const text = input.value.trim();
+
+            if (text) {
+                const newComment = document.createElement('div');
+                newComment.style.marginBottom = "5px";
+                newComment.innerHTML = `<strong>Anon:</strong> ${text}`;
+                list.appendChild(newComment);
+                input.value = ''; 
+            }
         }
 
         renderApp()
