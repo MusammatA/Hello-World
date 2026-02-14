@@ -43,50 +43,49 @@ p.subtitle {
     box-shadow: 4px 4px 0px var(--text-main);
 }
 
-/* --- NEW LOGIN BOX DESIGN --- */
+/* --- REFINED LOGIN BOX --- */
 .auth-box {
     background: #fff;
-    border: 4px solid var(--text-main);
-    border-radius: 24px;
-    padding: 60px 40px;
+    border: 3px solid var(--text-main); /* Thinner border */
+    border-radius: 20px;
+    padding: 40px 30px; /* Reduced padding (Smaller box) */
     text-align: center;
-    box-shadow: 12px 12px 0px var(--accent-pink);
-    max-width: 450px;
+    box-shadow: 8px 8px 0px var(--accent-pink);
+    max-width: 400px;
     margin: 60px auto;
-    transition: transform 0.3s;
+    transition: transform 0.2s;
 }
 
 .auth-box:hover {
     transform: translate(-2px, -2px);
-    box-shadow: 16px 16px 0px var(--accent-pink);
+    box-shadow: 12px 12px 0px var(--accent-pink);
 }
 
 .auth-box h2 {
     font-family: 'Fraunces', serif;
-    font-size: 2.5rem;
+    font-size: 2rem; /* Slightly smaller font */
     margin-bottom: 10px;
     color: var(--text-main);
 }
 
 .auth-subtext {
-    font-size: 1.1rem;
+    font-size: 1rem;
     color: #666;
-    margin-bottom: 40px;
+    margin-bottom: 30px;
 }
 
-/* --- NEW GLOWING BUTTONS --- */
+/* --- COMPACT GLOW BUTTON --- */
 .login-btn {
     background: var(--text-main);
     color: #fff;
     font-family: 'Quicksand', sans-serif;
     font-weight: 700;
-    font-size: 1.2rem;
-    padding: 18px 40px;
+    font-size: 1rem; /* Standard size */
+    padding: 12px 30px; /* Much smaller padding */
     border: none;
     border-radius: 50px;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0px 0px 0px rgba(0,0,0,0);
     display: inline-flex;
     align-items: center;
     gap: 10px;
@@ -94,29 +93,33 @@ p.subtitle {
 
 .login-btn:hover {
     background: #000;
-    transform: scale(1.05);
-    box-shadow: 0px 0px 20px var(--accent-green); /* The Glow Effect */
+    transform: translateY(-2px);
+    box-shadow: 0px 0px 15px var(--accent-green); /* The Glow */
 }
 
+/* --- SLEEK LOGOUT BUTTON --- */
 .logout-btn {
-    background: #fff;
+    background: transparent;
     border: 2px solid var(--text-main);
+    color: var(--text-main);
     font-family: 'Quicksand', sans-serif;
     font-weight: 700;
-    padding: 10px 25px;
+    padding: 8px 20px; /* Compact */
     border-radius: 30px;
     cursor: pointer;
-    box-shadow: 4px 4px 0px var(--text-main);
-    transition: all 0.2s;
     font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+    background: #fff;
 }
 
 .logout-btn:hover {
-    background: var(--accent-pink);
+    background: var(--text-main);
     color: #fff;
-    border-color: var(--text-main);
-    transform: translate(-2px, -2px);
-    box-shadow: 6px 6px 0px var(--text-main);
+    transform: translateY(-2px);
+    box-shadow: 4px 4px 0px rgba(0,0,0,0.1);
 }
 
 /* --- SEARCH BAR --- */
