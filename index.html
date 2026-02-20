@@ -18,7 +18,7 @@
         <p class="subtitle">Fresh from the Database</p>
 
         <div id="content-view">
-            <p style="text-align: center; padding-top: 50px;">Initializing the Rot...</p>
+            <p style="text-align: center; padding-top: 50px;" id="loading-text">Initializing the Rot...</p>
         </div>
 
         <div class="controls" id="controls" style="display:none;">
@@ -38,9 +38,18 @@
         let currentIndex = 0;
         let userId = null;
 
-        async function init() {
-            const { data: { session } } = await supabase.auth.getSession();
+        // 1. Initial Start
+        async function start() {
+            console.log("Checking Auth...");
+            const { data: { session }, error: authError } = await supabase.auth.getSession();
+            
+            if (authError) {
+                console.error("Auth Error:", authError);
+                return;
+            }
+
             if (!session) {
+                console.log("No Session Found - Showing Login");
                 document.getElementById('content-view').innerHTML = `
                     <div class="auth-box">
                         <h2>Login to see the memes</h2>
@@ -48,43 +57,58 @@
                     </div>`;
                 return;
             }
+
             userId = session.user.id;
+            console.log("User Logged In:", userId);
             document.getElementById('controls').style.display = 'flex';
-            await loadMemes();
+            await loadData();
         }
 
-        async function loadMemes() {
-            // Fetching logic aligned to your screenshot logs
-            const { data: captions } = await supabase.from('captions').select('*');
-            const { data: images } = await supabase.from('images').select('id, url');
-            
+        // 2. Fetch Data
+        async function loadData() {
+            const loadingText = document.getElementById('loading-text');
+            if(loadingText) loadingText.innerText = "Fetching Memes...";
+
+            console.log("Fetching Captions and Images...");
+            const { data: captions, error: capErr } = await supabase.from('captions').select('*');
+            const { data: images, error: imgErr } = await supabase.from('images').select('id, url');
+
+            if (capErr || imgErr) {
+                console.error("Data Fetch Error:", capErr || imgErr);
+                return;
+            }
+
             const imageMap = Object.fromEntries(images.map(i => [i.id, i.url]));
             memes = captions.map(c => ({ ...c, url: imageMap[c.image_id] }));
             
-            renderCard();
+            console.log("Total Memes Loaded:", memes.length);
+            render();
         }
 
-        function renderCard() {
+        // 3. Display Card
+        function render() {
             const view = document.getElementById('content-view');
             if (currentIndex >= memes.length) {
-                view.innerHTML = "<div class='card-text'>End of the deck. 🔚</div>";
+                view.innerHTML = "<div class='card-text' style='text-align:center;'>End of the deck. 🔚</div>";
                 return;
             }
 
             const item = memes[currentIndex];
             const comments = JSON.parse(localStorage.getItem(`c_${item.id}`) || '[]');
             
+            console.log("Rendering Card:", item.id);
+
             const card = document.createElement('div');
             card.className = 'meme-card';
             card.innerHTML = `
-                <img src="${item.url}" class="meme-image" draggable="false">
+                <img src="${item.url}" class="meme-image" draggable="false" onerror="this.src='https://media.giphy.com/media/26hkhKd9CQeRv7lqM/giphy.gif'">
                 <div class="card-text">${item.content}</div>
                 <div class="stat-bar">
                     <span><i class="fa-solid fa-arrow-up"></i> ${item.votes || 0}</span>
                     <span><i class="fa-solid fa-comment"></i> ${comments.length}</span>
                 </div>
                 <div class="comment-area">
-                    ${comments.map(c => `<div style="border-bottom:1px solid #eee; padding:5px;">匿名: ${c}</div>`).join('')}
+                    ${comments.map(c => `<div style="border-bottom:1px solid #eee; padding:4px;">匿名: ${c}</div>`).join('')}
                 </div>
                 <div style="padding:10px; border-top:2px solid #2D2424;">
                     <input type="text" placeholder="Add anonymous comment..." 
@@ -95,7 +119,7 @@
             view.innerHTML = "";
             view.appendChild(card);
 
-            // Swiping logic
+            // Init Hammer Swiping
             const h = new Hammer(card);
             h.on('pan', e => card.style.transform = `translateX(${e.deltaX}px) rotate(${e.deltaX/20}deg)`);
             h.on('panend', e => {
@@ -109,7 +133,6 @@
             const item = memes[currentIndex];
             history.push({ index: currentIndex, id: item.id, v: v });
             
-            // Saving to DB as verified in your logs
             await supabase.from('caption_votes').upsert({ 
                 profile_id: userId, 
                 caption_id: item.id, 
@@ -118,19 +141,20 @@
             });
 
             currentIndex++;
-            renderCard();
+            render();
         }
 
         function swipeRight() { handleVote(1); }
         function swipeLeft() { handleVote(-1); }
-        function undo() { if (history.length) { currentIndex = history.pop().index; renderCard(); } }
+        function undo() { if (history.length) { currentIndex = history.pop().index; render(); } }
         
         function addComment(id, input) {
+            if(!input.value.trim()) return;
             const c = JSON.parse(localStorage.getItem(`c_${id}`) || '[]');
             c.push(input.value);
             localStorage.setItem(`c_${id}`, JSON.stringify(c));
             input.value = "";
-            renderCard();
+            render();
         }
 
         function login() { 
@@ -140,7 +164,8 @@
             }); 
         }
 
-        init(); // Starts the initialization
+        // Start everything
+        start();
     </script>
 </body>
 </html>
