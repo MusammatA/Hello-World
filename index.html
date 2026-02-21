@@ -46,6 +46,11 @@
     let swipeIndex = 0;
     let userId = null;
 
+    function setStatus(text) {
+      const status = document.getElementById('status-msg');
+      if (status) status.textContent = text;
+    }
+
     function showFatal(message, details = '') {
       const tabs = document.getElementById('nav-tabs');
       if (tabs) tabs.style.display = 'none';
@@ -59,13 +64,32 @@
         </div>`;
     }
 
+    function withTimeout(promise, ms, label) {
+      let timeoutId;
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      });
+      return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+    }
+
+    window.addEventListener('error', (event) => {
+      showFatal('Runtime error.', event.message || 'Unknown script error');
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      const reason = event.reason && event.reason.message ? event.reason.message : String(event.reason || 'Unknown promise rejection');
+      showFatal('Unhandled promise error.', reason);
+    });
+
     async function init() {
+      setStatus('Checking auth session...');
+
       if (!supabase) {
         showFatal('Could not connect to Supabase.', 'The Supabase script may be blocked or failed to load.');
         return;
       }
 
-      const { data: { session }, error } = await supabase.auth.getSession();
+      const { data: { session }, error } = await withTimeout(supabase.auth.getSession(), 10000, 'Auth session check');
       if (error) {
         showFatal('Session check failed.', error.message || 'Unknown auth error');
         return;
@@ -86,13 +110,12 @@
     }
 
     async function loadData() {
-      const status = document.getElementById('status-msg');
-      if (status) status.innerText = 'Fetching the rot...';
+      setStatus('Fetching the rot...');
 
       try {
-        const captionsRes = await supabase.from('captions').select('*');
-        const imagesRes = await supabase.from('images').select('id, url');
-        const votesRes = await supabase.from('caption_votes').select('caption_id, profile_id, vote_value');
+        const captionsRes = await withTimeout(supabase.from('captions').select('*'), 10000, 'Captions query');
+        const imagesRes = await withTimeout(supabase.from('images').select('id, url'), 10000, 'Images query');
+        const votesRes = await withTimeout(supabase.from('caption_votes').select('caption_id, profile_id, vote_value'), 10000, 'Votes query');
 
         if (captionsRes.error) throw captionsRes.error;
         if (imagesRes.error) throw imagesRes.error;
