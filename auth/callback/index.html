@@ -1,166 +1,40 @@
-<!DOCTYPE html>
+#<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Brain Rot Central</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="styles.css"> 
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Completing Sign-In...</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-    <div class="container">
-        <h1>Brain Rot Central</h1>
-        <p class="subtitle">Fresh from the Database</p>
+  <p style="text-align: center; margin-top: 50px; font-family: sans-serif;">Completing sign-in...</p>
 
-        <div class="tabs" id="nav-tabs" style="display: none;">
-            <button class="tab-btn active" id="btn-grid" onclick="switchView('grid')">📜 Grid View</button>
-            <button class="tab-btn" id="btn-swipe" onclick="switchView('swipe')">🃏 Swipe View</button>
-        </div>
+  <script>
+    const SUPABASE_URL = 'https://secure.almostcrackd.ai';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpaHNnbmZqcW1ram1vb3d5ZmJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk1Mjc0MDAsImV4cCI6MjA2NTEwMzQwMH0.c9UQS_o2bRygKOEdnuRx7x7PeSf_OUGDtf9l3fMqMSQ';
 
-        <div id="content-view">
-            <p style="text-align: center; padding-top: 50px;" id="status-msg">Initializing the Rot...</p>
-        </div>
-    </div>
+    async function completeAuth() {
+      try {
+        const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get('code');
 
-    <script>
-        const SUPABASE_URL = 'https://secure.almostcrackd.ai';
-        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpaHNnbmZqcW1ram1vb3d5ZmJuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk1Mjc0MDAsImV4cCI6MjA2NTEwMzQwMH0.c9UQS_o2bRygKOEdnuRx7x7PeSf_OUGDtf9l3fMqMSQ';
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-        let allMemes = [];
-        let voteStats = {};
-        let currentView = 'grid'; 
-        let swipeIndex = 0;
-        let userId = null;
-
-        async function init() {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) {
-                document.getElementById('content-view').innerHTML = `
-                    <div class="auth-box">
-                        <h2>Login to see the memes</h2>
-                        <button class="login-btn" onclick="login()">Login with Google</button>
-                    </div>`;
-                return;
-            }
-            userId = session.user.id;
-            document.getElementById('nav-tabs').style.display = 'flex';
-            await loadData();
+        if (code) {
+          const { error } = await client.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+        } else {
+          const { error } = await client.auth.getSession();
+          if (error) throw error;
         }
 
-        async function loadData() {
-            const status = document.getElementById('status-msg');
-            if(status) status.innerText = "Fetching the rot...";
+        window.location.replace('/');
+      } catch (error) {
+        console.error('Auth callback error:', error);
+        document.body.innerHTML = '<p style="text-align: center; color: red; font-family: sans-serif; margin-top: 50px;">Sign-in failed: ' + (error?.message || 'Unknown error') + '</p>';
+      }
+    }
 
-            try {
-                // Fetching in a safe sequence to avoid Promise.all hangs
-                const { data: captions } = await supabase.from('captions').select('*');
-                const { data: images } = await supabase.from('images').select('id, url');
-                const { data: votes } = await supabase.from('caption_votes').select('*');
-                
-                const imageMap = Object.fromEntries(images.map(i => [i.id, i.url]));
-                const localVotes = JSON.parse(localStorage.getItem('my_votes_v1') || '{}');
-
-                voteStats = {};
-                votes.forEach(v => {
-                    if (!voteStats[v.caption_id]) voteStats[v.caption_id] = { total: 0, myVote: 0 };
-                    if (v.profile_id !== userId) voteStats[v.caption_id].total += parseInt(v.vote_value);
-                });
-
-                Object.keys(localVotes).forEach(id => {
-                    if (!voteStats[id]) voteStats[id] = { total: 0, myVote: 0 };
-                    voteStats[id].myVote = Number(localVotes[id]);
-                    voteStats[id].total += voteStats[id].myVote;
-                });
-
-                allMemes = captions.map(c => ({ ...c, url: imageMap[c.image_id] }));
-                draw();
-            } catch (err) {
-                console.error("Load failed:", err);
-                document.getElementById('content-view').innerHTML = "Failed to load data. Refresh page.";
-            }
-        }
-
-        function switchView(view) {
-            currentView = view;
-            document.getElementById('btn-grid').classList.toggle('active', view === 'grid');
-            document.getElementById('btn-swipe').classList.toggle('active', view === 'swipe');
-            draw();
-        }
-
-        function draw() {
-            const container = document.getElementById('content-view');
-            container.innerHTML = ""; // Clear status message
-            if (currentView === 'grid') renderGrid(container);
-            else renderSwipe(container);
-        }
-
-        function renderGrid(container) {
-            let html = `<ul class="grid-list">`;
-            allMemes.forEach(item => {
-                const stats = voteStats[item.id] || { total: 0, myVote: 0 };
-                html += `<li>
-                    <img src="${item.url}" class="meme-image" onerror="this.src='https://media.giphy.com/media/26hkhKd9CQeRv7lqM/giphy.gif'">
-                    <div class="card-content">✨ ${item.content}</div>
-                    <div class="actions"><span class="vote-count">${stats.total}</span></div>
-                </li>`;
-            });
-            container.innerHTML = html + `</ul>`;
-        }
-
-        function renderSwipe(container) {
-            if (swipeIndex >= allMemes.length) {
-                container.innerHTML = `<p style="text-align:center; padding-top:50px;">End of the deck. 🔚</p>`;
-                return;
-            }
-            const item = allMemes[swipeIndex];
-            container.innerHTML = `
-                <div id="swipe-container">
-                    <div class="click-zone click-left" onclick="handleSwipeVote(-1)"></div>
-                    <div class="click-zone click-right" onclick="handleSwipeVote(1)"></div>
-                    <div class="swipe-card" id="card-el">
-                        <img src="${item.url}" class="meme-image" draggable="false" onerror="this.src='https://media.giphy.com/media/26hkhKd9CQeRv7lqM/giphy.gif'">
-                        <div class="card-content">✨ ${item.content}</div>
-                    </div>
-                    <p style="text-align:center; color:#888; margin-top:15px;">Tap Sides to Vote | Swipe to Toss</p>
-                </div>`;
-            
-            // Re-initializing Hammer for the specific element
-            const mc = new Hammer(document.getElementById('card-el'));
-            mc.on("pan", e => e.target.style.transform = `translateX(${e.deltaX}px) rotate(${e.deltaX/20}deg)`);
-            mc.on("panend", e => {
-                if (Math.abs(e.deltaX) > 150) handleSwipeVote(e.deltaX > 0 ? 1 : -1);
-                else e.target.style.transform = '';
-            });
-        }
-
-        async function handleSwipeVote(v) {
-            const item = allMemes[swipeIndex];
-            // Visual feedback before moving
-            const el = document.getElementById('card-el');
-            el.style.transition = '0.3s';
-            el.style.transform = v > 0 ? 'translateX(1000px) rotate(30deg)' : 'translateX(-1000px) rotate(-30deg)';
-            
-            // DB Update
-            await supabase.from('caption_votes').upsert({ 
-                profile_id: userId, 
-                caption_id: item.id, 
-                vote_value: v, 
-                created_datetime_utc: new Date().toISOString() 
-            });
-
-            setTimeout(() => {
-                swipeIndex++;
-                draw();
-            }, 200);
-        }
-
-        function login() { supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/auth/callback' } }); }
-
-        init(); 
-    </script>
+    completeAuth();
+  </script>
 </body>
 </html>
