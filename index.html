@@ -29,6 +29,15 @@
 
        <div class="search-wrapper" style="display: none;">
            <input type="text" id="search-input" placeholder="Search captions...">
+           <div class="upload-wrapper">
+               <label class="upload-label" for="image-upload">Upload Image</label>
+               <input
+                   type="file"
+                   id="image-upload"
+                   accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,image/heic"
+               >
+               <div id="upload-status" class="upload-status"></div>
+           </div>
        </div>
 
        <div id="content-view">
@@ -53,6 +62,15 @@
        let swipeHistory = [];
        let currentSearchTerm = '';
        const SWIPE_PROGRESS_KEY_PREFIX = 'swipe_progress_v1_';
+       const PIPELINE_BASE_URL = 'https://api.almostcrackd.ai';
+       const SUPPORTED_IMAGE_TYPES = new Set([
+           'image/jpeg',
+           'image/jpg',
+           'image/png',
+           'image/webp',
+           'image/gif',
+           'image/heic'
+       ]);
 
        function getClient() {
            if (!supabaseClient) {
@@ -87,6 +105,10 @@
        function switchView(view) {
            currentView = view;
            updateSideTabs();
+           renderCurrentView();
+       }
+
+       function draw() {
            renderCurrentView();
        }
 
@@ -133,6 +155,126 @@
                provider: 'google',
                options: { redirectTo: window.location.origin + '/auth/callback' }
            })
+       }
+
+       async function getAccessToken() {
+           const client = getClient();
+           const { data: { session }, error } = await client.auth.getSession();
+           if (error || !session?.access_token) {
+               throw new Error('No access token available. Please sign in again.');
+           }
+           return session.access_token;
+       }
+
+       function setUploadStatus(message, isError = false) {
+           const status = document.getElementById('upload-status');
+           if (!status) return;
+           status.textContent = message || '';
+           status.classList.toggle('error', Boolean(isError));
+       }
+
+       function normalizeGeneratedCaptions(captions, cdnUrl) {
+           const list = Array.isArray(captions) ? captions : [];
+           return list.map((item, index) => ({
+               ...item,
+               id: item.id || item.caption_id || `generated-${Date.now()}-${index}`,
+               content: item.content || item.caption_text || '',
+               imageUrl: cdnUrl
+           }));
+       }
+
+       async function handleImageUpload(file) {
+           if (!file) return;
+           if (!SUPPORTED_IMAGE_TYPES.has(file.type)) {
+               setUploadStatus(`Unsupported file type: ${file.type || 'unknown'}`, true);
+               return;
+           }
+
+           try {
+               setUploadStatus('Preparing upload...');
+               const token = await getAccessToken();
+
+               console.log('[Pipeline Step 1] Generate presigned URL', { contentType: file.type });
+               const step1Res = await fetch(`${PIPELINE_BASE_URL}/pipeline/generate-presigned-url`, {
+                   method: 'POST',
+                   headers: {
+                       Authorization: `Bearer ${token}`,
+                       'Content-Type': 'application/json'
+                   },
+                   body: JSON.stringify({ contentType: file.type })
+               });
+               if (!step1Res.ok) throw new Error(`Step 1 failed: ${step1Res.status}`);
+               const step1Data = await step1Res.json();
+               const presignedUrl = step1Data.presignedUrl;
+               const cdnUrl = step1Data.cdnUrl;
+               console.log('[Pipeline Step 1] Success', { presignedUrl, cdnUrl });
+
+               setUploadStatus('Uploading image bytes...');
+               console.log('[Pipeline Step 2] Upload bytes to presigned URL');
+               const step2Res = await fetch(presignedUrl, {
+                   method: 'PUT',
+                   headers: {
+                       'Content-Type': file.type
+                   },
+                   body: file
+               });
+               if (!step2Res.ok) throw new Error(`Step 2 failed: ${step2Res.status}`);
+               console.log('[Pipeline Step 2] Success');
+
+               setUploadStatus('Registering image...');
+               console.log('[Pipeline Step 3] Register image URL', { imageUrl: cdnUrl });
+               const step3Res = await fetch(`${PIPELINE_BASE_URL}/pipeline/upload-image-from-url`, {
+                   method: 'POST',
+                   headers: {
+                       Authorization: `Bearer ${token}`,
+                       'Content-Type': 'application/json'
+                   },
+                   body: JSON.stringify({
+                       imageUrl: cdnUrl,
+                       isCommonUse: false
+                   })
+               });
+               if (!step3Res.ok) throw new Error(`Step 3 failed: ${step3Res.status}`);
+               const step3Data = await step3Res.json();
+               const imageId = step3Data.imageId;
+               console.log('[Pipeline Step 3] Success', { imageId });
+
+               setUploadStatus('Generating captions...');
+               console.log('[Pipeline Step 4] Generate captions', { imageId });
+               const step4Res = await fetch(`${PIPELINE_BASE_URL}/pipeline/generate-captions`, {
+                   method: 'POST',
+                   headers: {
+                       Authorization: `Bearer ${token}`,
+                       'Content-Type': 'application/json'
+                   },
+                   body: JSON.stringify({ imageId })
+               });
+               if (!step4Res.ok) throw new Error(`Step 4 failed: ${step4Res.status}`);
+               const step4Data = await step4Res.json();
+               console.log('[Pipeline Step 4] Success', step4Data);
+
+               const generated = Array.isArray(step4Data) ? step4Data : (step4Data.captions || []);
+               const newCaptions = normalizeGeneratedCaptions(generated, cdnUrl);
+               allMemes = [...newCaptions, ...allMemes];
+
+               setUploadStatus(`Done. Added ${newCaptions.length} new caption(s).`);
+               draw();
+           } catch (err) {
+               console.error('[Pipeline] Upload flow failed', err);
+               setUploadStatus(err.message || 'Upload failed.', true);
+           }
+       }
+
+       function setupUpload() {
+           const oldInput = document.getElementById('image-upload');
+           if (!oldInput) return;
+           const newInput = oldInput.cloneNode(true);
+           oldInput.parentNode.replaceChild(newInput, oldInput);
+           newInput.addEventListener('change', async (e) => {
+               const file = e.target.files && e.target.files[0];
+               await handleImageUpload(file);
+               newInput.value = '';
+           });
        }
       
        async function renderApp() {
@@ -217,6 +359,7 @@
            updateSideTabs();
            renderCurrentView(container);
            setupSearch(container);
+           setupUpload();
        }
 
        function renderCurrentView(container = document.getElementById('content-view')) {

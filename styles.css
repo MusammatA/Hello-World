@@ -148,6 +148,42 @@ p.subtitle {
   margin-bottom: 32px;
 }
 
+.upload-wrapper {
+  margin: 14px auto 0;
+  max-width: 760px;
+  display: grid;
+  gap: 8px;
+  text-align: left;
+}
+
+.upload-label {
+  color: #cbd5e1;
+  font-size: 0.88rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#image-upload {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(191, 219, 254, 0.35);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.93);
+  color: var(--ink);
+  font-family: 'IBM Plex Mono', monospace;
+  box-shadow: var(--shadow);
+}
+
+.upload-status {
+  min-height: 20px;
+  color: #cbd5e1;
+  font-size: 0.84rem;
+}
+
+.upload-status.error {
+  color: #fecaca;
+}
+
 #search-input {
   width: 100%;
   max-width: 760px;
