@@ -64,6 +64,7 @@
        let generatedMemes = [];
        let imageUrlById = {};
        let AUTO_REFRESH_TIMER = null;
+       let ACCOUNT_ACTION_MESSAGE = '';
        let GENERATION_UI_STATE = {
            status: 'idle',
            modelTag: 'caption-pipeline-v1',
@@ -439,12 +440,13 @@
            return `<div class="uploader-meta">Uploaded by ${item.uploaderName}</div>`;
        }
 
-       function renderHeaderActions() {
+       function renderHeaderActions(showRefresh = true) {
            return `
                <div class="top-actions">
+                   ${showRefresh ? `
                    <button class="logout-btn" onclick="refreshFeed(true)">
                        <i class="fa-solid fa-rotate"></i> Refresh feed
-                   </button>
+                   </button>` : ''}
                    <button class="logout-btn" onclick="getClient().auth.signOut().then(() => location.reload())">
                        <i class="fa-solid fa-arrow-right-from-bracket"></i> Log out
                    </button>
@@ -614,32 +616,51 @@
        async function deleteUploadByImageId(imageId) {
            if (!CURRENT_USER_ID) return;
            if (!imageId) {
-               alert('Cannot delete this upload because the image id is missing.');
+               ACCOUNT_ACTION_MESSAGE = 'Cannot delete this upload because the image id is missing.';
+               renderCurrentView();
                return;
            }
            const confirmDelete = window.confirm('Delete this upload and all captions from it?');
            if (!confirmDelete) return;
 
-            if (String(imageId).startsWith('local-')) {
-                const localCaptionId = String(imageId).replace('local-', '');
-                allMemes = allMemes.filter(item => item.id !== localCaptionId);
-                generatedMemes = generatedMemes.filter(item => item.id !== localCaptionId);
-                saveGeneratedMemes();
-                renderCurrentView();
-                return;
-            }
+           ACCOUNT_ACTION_MESSAGE = 'Deleting upload...';
+           renderCurrentView();
 
-           const client = getClient();
-           const { error: captionDeleteError } = await client.from('captions').delete().eq('image_id', imageId);
-           if (captionDeleteError) {
-               alert(`Delete failed: ${captionDeleteError.message}`);
+           if (String(imageId).startsWith('local-')) {
+               const localCaptionId = String(imageId).replace('local-', '');
+               allMemes = allMemes.filter(item => item.id !== localCaptionId);
+               generatedMemes = generatedMemes.filter(item => item.id !== localCaptionId);
+               saveGeneratedMemes();
+               ACCOUNT_ACTION_MESSAGE = 'Deleted local upload.';
+               renderCurrentView();
                return;
            }
-           await client.from('images').delete().eq('id', imageId);
+
+           const client = getClient();
+           const captionIds = allMemes
+               .filter(item => item.image_id === imageId)
+               .map(item => item.id);
+           if (captionIds.length) {
+               await client.from('caption_votes').delete().in('caption_id', captionIds);
+           }
+
+           const { error: captionDeleteError } = await client.from('captions').delete().eq('image_id', imageId);
+           if (captionDeleteError) {
+               ACCOUNT_ACTION_MESSAGE = `Delete failed: ${captionDeleteError.message}`;
+               renderCurrentView();
+               return;
+           }
+           const { error: imageDeleteError } = await client.from('images').delete().eq('id', imageId);
+           if (imageDeleteError) {
+               ACCOUNT_ACTION_MESSAGE = `Captions deleted, but image record could not be removed: ${imageDeleteError.message}`;
+               renderCurrentView();
+               return;
+           }
 
            allMemes = allMemes.filter(item => item.image_id !== imageId);
            generatedMemes = generatedMemes.filter(item => item.image_id !== imageId);
            saveGeneratedMemes();
+           ACCOUNT_ACTION_MESSAGE = 'Upload deleted.';
            renderCurrentView();
        }
 
@@ -652,6 +673,16 @@
                return;
            }
            saveDisplayName(value);
+           allMemes = allMemes.map(item => isOwnedByCurrentUser(item)
+               ? { ...item, uploaderName: value, uploaderEmail: CURRENT_USER_EMAIL || item.uploaderEmail }
+               : item
+           );
+           generatedMemes = generatedMemes.map(item => isOwnedByCurrentUser(item)
+               ? { ...item, uploaderName: value, uploaderEmail: CURRENT_USER_EMAIL || item.uploaderEmail }
+               : item
+           );
+           saveGeneratedMemes();
+           ACCOUNT_ACTION_MESSAGE = 'Display name updated across your uploads.';
            renderCurrentView();
        }
       
@@ -847,7 +878,7 @@
            const ownedUploads = getOwnedUploads();
            const displayName = getCurrentDisplayName();
            let html = `
-               ${renderHeaderActions()}
+               ${renderHeaderActions(false)}
                <section class="account-panel">
                    <h3 class="account-title">Your Account</h3>
                    <div class="account-row"><strong>Email:</strong> <span>${CURRENT_USER_EMAIL || 'Not available'}</span></div>
@@ -860,6 +891,7 @@
                            </button>
                        </div>
                    </div>
+                   ${ACCOUNT_ACTION_MESSAGE ? `<div class="account-message">${ACCOUNT_ACTION_MESSAGE}</div>` : ''}
                </section>
                <section class="account-panel">
                    <h3 class="account-title">Your Uploads (${ownedUploads.length})</h3>`;
