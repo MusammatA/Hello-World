@@ -335,6 +335,15 @@ body.has-sidebar {
    border-radius: 16px;
    overflow: hidden;
    box-shadow: 6px 6px 0 var(--text-main);
+   transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.swipe-card.choice-like {
+   box-shadow: 0 0 0 5px rgba(76, 175, 80, 0.85), 6px 6px 0 var(--text-main);
+}
+
+.swipe-card.choice-dislike {
+   box-shadow: 0 0 0 5px rgba(244, 67, 54, 0.85), 6px 6px 0 var(--text-main);
 }
 
 .swipe-card .meme-image {

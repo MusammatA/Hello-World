@@ -315,9 +315,20 @@
            if (!memes.length || swipeIndex >= memes.length) return;
            const currentMeme = memes[swipeIndex];
            swipeHistory.push(swipeIndex);
-           await handleVote(currentMeme.id, voteValue, true);
+           showSwipeFeedback(voteValue);
+           await Promise.all([
+               handleVote(currentMeme.id, voteValue, true, true),
+               new Promise(resolve => setTimeout(resolve, 140))
+           ]);
            swipeIndex = swipeIndex + 1;
            renderCurrentView();
+       }
+
+       function showSwipeFeedback(voteValue) {
+           const card = document.querySelector('.swipe-card');
+           if (!card) return;
+           card.classList.remove('choice-like', 'choice-dislike');
+           card.classList.add(voteValue === 1 ? 'choice-like' : 'choice-dislike');
        }
 
        function bindSwipeGestures(cardId) {
@@ -365,7 +376,7 @@
            renderCurrentView();
        }
 
-       async function handleVote(captionId, newValue, suppressGridUI = false) {
+       async function handleVote(captionId, newValue, suppressGridUI = false, forceSet = false) {
            if (!CURRENT_USER_ID) { alert("Login first!"); return; }
 
            try {
@@ -379,8 +390,11 @@
                let currentTotal = countSpan ? (parseInt(countSpan.innerText) || 0) : voteStats[captionId].total;
 
                let nextVoteValue = 0;
-              
-               if (currentVoteValue === newValue) {
+               if (forceSet) {
+                   nextVoteValue = newValue;
+                   currentTotal = currentTotal + (newValue - currentVoteValue);
+                   if (!suppressGridUI) updateUIColors(captionId, newValue);
+               } else if (currentVoteValue === newValue) {
                    if (!suppressGridUI) updateUIColors(captionId, 0);
                    currentTotal = currentTotal - newValue;
                    nextVoteValue = 0;
