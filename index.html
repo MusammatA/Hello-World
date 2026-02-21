@@ -52,6 +52,8 @@
        let voteStats = {};
        let CURRENT_USER_ID = null;
        let CURRENT_ACCESS_TOKEN = null;
+       let CURRENT_USER_EMAIL = '';
+       let CURRENT_UPLOADER_NAME = '';
        let currentView = 'grid';
        let swipeIndex = 0;
        let swipeHistory = [];
@@ -74,6 +76,26 @@
                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
            }
            return supabaseClient;
+       }
+
+       function toTitleCase(value) {
+           return String(value || '')
+               .split(' ')
+               .filter(Boolean)
+               .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+               .join(' ');
+       }
+
+       function deriveUploaderNameFromEmail(email) {
+           if (!email) return 'Unknown uploader';
+           const local = String(email).split('@')[0] || '';
+           const spaced = local.replace(/[._-]+/g, ' ').trim();
+           return toTitleCase(spaced || email);
+       }
+
+       function setCurrentUserIdentity(user) {
+           CURRENT_USER_EMAIL = user?.email || '';
+           CURRENT_UPLOADER_NAME = deriveUploaderNameFromEmail(CURRENT_USER_EMAIL);
        }
       
        function logMsg(msg, color = "#fff") {
@@ -267,8 +289,15 @@
                ...item,
                id: item.id || item.caption_id || `generated-${Date.now()}-${index}`,
                content: item.content || item.caption_text || '',
-               imageUrl: cdnUrl
-           }));
+               imageUrl: cdnUrl,
+               uploaderName: item.uploaderName || CURRENT_UPLOADER_NAME || deriveUploaderNameFromEmail(CURRENT_USER_EMAIL),
+               uploaderEmail: item.uploaderEmail || CURRENT_USER_EMAIL || ''
+            }));
+        }
+
+       function renderUploaderMeta(item) {
+           if (!item || !item.uploaderName) return '';
+           return `<div class="uploader-meta">Uploaded by ${item.uploaderName}</div>`;
        }
 
        function extractGeneratedCaptions(step4Data) {
@@ -400,11 +429,14 @@
            if (session) {
                CURRENT_USER_ID = session.user.id;
                CURRENT_ACCESS_TOKEN = session.access_token || null;
+               setCurrentUserIdentity(session.user);
                sidebar.style.display = 'flex';
                document.body.classList.add('has-sidebar');
                await fetchAndShowMemes(client, container);
            } else {
                CURRENT_ACCESS_TOKEN = null;
+               CURRENT_USER_EMAIL = '';
+               CURRENT_UPLOADER_NAME = '';
                searchBar.style.display = 'none';
                sidebar.style.display = 'none';
                document.body.classList.remove('has-sidebar');
@@ -424,11 +456,14 @@
                if (currentSession) {
                    CURRENT_USER_ID = currentSession.user.id;
                    CURRENT_ACCESS_TOKEN = currentSession.access_token || null;
+                   setCurrentUserIdentity(currentSession.user);
                    sidebar.style.display = 'flex';
                    document.body.classList.add('has-sidebar');
                    await fetchAndShowMemes(client, container);
                } else {
                    CURRENT_ACCESS_TOKEN = null;
+                   CURRENT_USER_EMAIL = '';
+                   CURRENT_UPLOADER_NAME = '';
                }
            });
        }
@@ -530,6 +565,7 @@
                        <img src="${displayUrl}" class="meme-image" alt="Meme"
                             onerror="this.onerror=null; this.src='${fallbackGif}';">
                        <div class="card-content">${item.content}</div>
+                       ${renderUploaderMeta(item)}
                        <div class="actions">
                            <div class="vote-controls">
                                <button class="vote-btn ${upActive} up-btn" onclick="handleVote('${item.id}', 1)">
@@ -580,6 +616,7 @@
                             onerror="this.onerror=null; this.src='${fallbackGif}';">
                       
                        <div class="card-content">${item.content}</div>
+                       ${renderUploaderMeta(item)}
 
                        <div class="actions">
                            <div class="vote-controls">
@@ -650,6 +687,7 @@
                        <img src="${displayUrl}" class="meme-image" alt="Meme"
                             onerror="this.onerror=null; this.src='${fallbackGif}';">
                        <div class="card-content">${item.content}</div>
+                       ${renderUploaderMeta(item)}
                        <div class="actions">
                            <div class="vote-controls">
                                <span class="vote-count">${stats.total}</span>

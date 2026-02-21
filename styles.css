@@ -269,6 +269,13 @@ li:hover {
   flex-grow: 1;
 }
 
+.uploader-meta {
+  padding: 0 18px 12px;
+  font-size: 0.8rem;
+  color: #64748b;
+  letter-spacing: 0.02em;
+}
+
 .actions {
   padding: 13px 16px;
   background: #f1f5f9;
