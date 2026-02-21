@@ -315,6 +315,13 @@ body.has-sidebar {
    margin-bottom: 12px;
 }
 
+.swipe-end-actions {
+   display: flex;
+   justify-content: center;
+   gap: 12px;
+   flex-wrap: wrap;
+}
+
 .swipe-card {
    position: relative;
    background: var(--card-bg);

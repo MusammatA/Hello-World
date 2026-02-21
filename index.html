@@ -50,6 +50,7 @@
        let CURRENT_USER_ID = null;
        let currentView = 'grid';
        let swipeIndex = 0;
+       let swipeHistory = [];
        let currentSearchTerm = '';
 
        function getClient() {
@@ -84,7 +85,6 @@
 
        function switchView(view) {
            currentView = view;
-           if (view === 'swipe') swipeIndex = 0;
            updateSideTabs();
            renderCurrentView();
        }
@@ -173,6 +173,8 @@
                imageUrl: imageMap[item.image_id] || null
            }));
 
+           swipeIndex = 0;
+           swipeHistory = [];
            updateSideTabs();
            renderCurrentView(container);
            setupSearch(container);
@@ -240,7 +242,27 @@
                return;
            }
 
-           if (swipeIndex >= memes.length) swipeIndex = 0;
+           if (swipeIndex < 0) swipeIndex = 0;
+           if (swipeIndex >= memes.length) {
+               container.innerHTML = `
+                   <div style="text-align: right; margin-bottom: 20px;">
+                       <button class="logout-btn" onclick="getClient().auth.signOut().then(() => location.reload())">
+                           <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
+                       </button>
+                   </div>
+                   <div class="swipe-panel">
+                       <div class="swipe-hint">You reached the end of this swipe deck.</div>
+                       <div class="swipe-end-actions">
+                           <button class="logout-btn" onclick="rewindSwipe()">
+                               <i class="fa-solid fa-arrow-left"></i> Rewind Last
+                           </button>
+                           <button class="logout-btn" onclick="restartSwipeDeck()">
+                               <i class="fa-solid fa-rotate-left"></i> Restart Deck
+                           </button>
+                       </div>
+                   </div>`;
+               return;
+           }
 
            const item = memes[swipeIndex];
            const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
@@ -278,16 +300,30 @@
            newSearch.addEventListener('input', (e) => {
                currentSearchTerm = e.target.value.toLowerCase();
                swipeIndex = 0;
+               swipeHistory = [];
                renderCurrentView(container);
            });
        }
 
        async function handleSwipeChoice(voteValue) {
            const memes = getFilteredMemes();
-           if (!memes.length) return;
+           if (!memes.length || swipeIndex >= memes.length) return;
            const currentMeme = memes[swipeIndex];
+           swipeHistory.push(swipeIndex);
            await handleVote(currentMeme.id, voteValue, true);
-           swipeIndex = (swipeIndex + 1) % memes.length;
+           swipeIndex = swipeIndex + 1;
+           renderCurrentView();
+       }
+
+       function rewindSwipe() {
+           if (!swipeHistory.length) return;
+           swipeIndex = swipeHistory.pop();
+           renderCurrentView();
+       }
+
+       function restartSwipeDeck() {
+           swipeIndex = 0;
+           swipeHistory = [];
            renderCurrentView();
        }
 
