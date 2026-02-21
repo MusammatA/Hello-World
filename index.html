@@ -57,6 +57,7 @@
        let allMemes = [];
        let voteStats = {};
        let CURRENT_USER_ID = null;
+       let CURRENT_ACCESS_TOKEN = null;
        let currentView = 'grid';
        let swipeIndex = 0;
        let swipeHistory = [];
@@ -112,6 +113,32 @@
            renderCurrentView();
        }
 
+       async function withTimeout(promise, ms, label) {
+           let timer = null;
+           const timeoutPromise = new Promise((_, reject) => {
+               timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+           });
+           return Promise.race([promise, timeoutPromise]).finally(() => {
+               if (timer) clearTimeout(timer);
+           });
+       }
+
+       async function fetchWithTimeout(url, options, ms, label) {
+           const controller = new AbortController();
+           const timer = setTimeout(() => controller.abort(), ms);
+           try {
+               const res = await fetch(url, { ...options, signal: controller.signal });
+               return res;
+           } catch (err) {
+               if (err && err.name === 'AbortError') {
+                   throw new Error(`${label} timed out after ${ms}ms`);
+               }
+               throw err;
+           } finally {
+               clearTimeout(timer);
+           }
+       }
+
        function getSwipeProgressKey() {
            return CURRENT_USER_ID ? `${SWIPE_PROGRESS_KEY_PREFIX}${CURRENT_USER_ID}` : null;
        }
@@ -158,11 +185,18 @@
        }
 
        async function getAccessToken() {
+           if (CURRENT_ACCESS_TOKEN) return CURRENT_ACCESS_TOKEN;
            const client = getClient();
-           const { data: { session }, error } = await client.auth.getSession();
+           console.log('[Auth] Getting session token...');
+           const { data: { session }, error } = await withTimeout(
+               client.auth.getSession(),
+               7000,
+               'getSession'
+           );
            if (error || !session?.access_token) {
                throw new Error('No access token available. Please sign in again.');
            }
+           CURRENT_ACCESS_TOKEN = session.access_token;
            return session.access_token;
        }
 
@@ -192,17 +226,19 @@
 
            try {
                setUploadStatus('Preparing upload...');
+               console.log('[Pipeline] Starting upload', { name: file.name, type: file.type, size: file.size });
                const token = await getAccessToken();
+               setUploadStatus('Calling Step 1...');
 
                console.log('[Pipeline Step 1] Generate presigned URL', { contentType: file.type });
-               const step1Res = await fetch(`${PIPELINE_BASE_URL}/pipeline/generate-presigned-url`, {
+               const step1Res = await fetchWithTimeout(`${PIPELINE_BASE_URL}/pipeline/generate-presigned-url`, {
                    method: 'POST',
                    headers: {
                        Authorization: `Bearer ${token}`,
                        'Content-Type': 'application/json'
                    },
                    body: JSON.stringify({ contentType: file.type })
-               });
+               }, 20000, 'Step 1');
                if (!step1Res.ok) throw new Error(`Step 1 failed: ${step1Res.status}`);
                const step1Data = await step1Res.json();
                const presignedUrl = step1Data.presignedUrl;
@@ -211,19 +247,19 @@
 
                setUploadStatus('Uploading image bytes...');
                console.log('[Pipeline Step 2] Upload bytes to presigned URL');
-               const step2Res = await fetch(presignedUrl, {
+               const step2Res = await fetchWithTimeout(presignedUrl, {
                    method: 'PUT',
                    headers: {
                        'Content-Type': file.type
                    },
                    body: file
-               });
+               }, 40000, 'Step 2');
                if (!step2Res.ok) throw new Error(`Step 2 failed: ${step2Res.status}`);
                console.log('[Pipeline Step 2] Success');
 
                setUploadStatus('Registering image...');
                console.log('[Pipeline Step 3] Register image URL', { imageUrl: cdnUrl });
-               const step3Res = await fetch(`${PIPELINE_BASE_URL}/pipeline/upload-image-from-url`, {
+               const step3Res = await fetchWithTimeout(`${PIPELINE_BASE_URL}/pipeline/upload-image-from-url`, {
                    method: 'POST',
                    headers: {
                        Authorization: `Bearer ${token}`,
@@ -233,7 +269,7 @@
                        imageUrl: cdnUrl,
                        isCommonUse: false
                    })
-               });
+               }, 20000, 'Step 3');
                if (!step3Res.ok) throw new Error(`Step 3 failed: ${step3Res.status}`);
                const step3Data = await step3Res.json();
                const imageId = step3Data.imageId;
@@ -241,14 +277,14 @@
 
                setUploadStatus('Generating captions...');
                console.log('[Pipeline Step 4] Generate captions', { imageId });
-               const step4Res = await fetch(`${PIPELINE_BASE_URL}/pipeline/generate-captions`, {
+               const step4Res = await fetchWithTimeout(`${PIPELINE_BASE_URL}/pipeline/generate-captions`, {
                    method: 'POST',
                    headers: {
                        Authorization: `Bearer ${token}`,
                        'Content-Type': 'application/json'
                    },
                    body: JSON.stringify({ imageId })
-               });
+               }, 45000, 'Step 4');
                if (!step4Res.ok) throw new Error(`Step 4 failed: ${step4Res.status}`);
                const step4Data = await step4Res.json();
                console.log('[Pipeline Step 4] Success', step4Data);
@@ -287,11 +323,13 @@
           
            if (session) {
                CURRENT_USER_ID = session.user.id;
+               CURRENT_ACCESS_TOKEN = session.access_token || null;
                searchBar.style.display = 'block';
                sidebar.style.display = 'flex';
                document.body.classList.add('has-sidebar');
                await fetchAndShowMemes(client, container);
            } else {
+               CURRENT_ACCESS_TOKEN = null;
                searchBar.style.display = 'none';
                sidebar.style.display = 'none';
                document.body.classList.remove('has-sidebar');
@@ -310,10 +348,13 @@
            client.auth.onAuthStateChange(async (_event, currentSession) => {
                if (currentSession) {
                    CURRENT_USER_ID = currentSession.user.id;
+                   CURRENT_ACCESS_TOKEN = currentSession.access_token || null;
                    searchBar.style.display = 'block';
                    sidebar.style.display = 'flex';
                    document.body.classList.add('has-sidebar');
                    await fetchAndShowMemes(client, container);
+               } else {
+                   CURRENT_ACCESS_TOKEN = null;
                }
            });
        }
