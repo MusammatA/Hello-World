@@ -59,6 +59,12 @@
        let swipeHistory = [];
        let currentSearchTerm = '';
        let generatedMemes = [];
+       let GENERATION_UI_STATE = {
+           status: 'idle',
+           modelTag: 'caption-pipeline-v1',
+           message: 'Waiting for a new upload',
+           updatedAtUtc: null
+       };
        const SWIPE_PROGRESS_KEY_PREFIX = 'swipe_progress_v1_';
        const GENERATED_MEMES_KEY_PREFIX = 'generated_memes_v1_';
        const PIPELINE_BASE_URL = 'https://api.almostcrackd.ai';
@@ -96,6 +102,42 @@
        function setCurrentUserIdentity(user) {
            CURRENT_USER_EMAIL = user?.email || '';
            CURRENT_UPLOADER_NAME = deriveUploaderNameFromEmail(CURRENT_USER_EMAIL);
+       }
+
+       function formatShortTime(isoString) {
+           if (!isoString) return 'n/a';
+           const date = new Date(isoString);
+           if (Number.isNaN(date.getTime())) return 'n/a';
+           return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+       }
+
+       function extractModelTag(step4Data) {
+           if (!step4Data || typeof step4Data !== 'object') return 'caption-pipeline-v1';
+           return step4Data.model || step4Data.modelTag || step4Data.model_name || step4Data.generator || 'caption-pipeline-v1';
+       }
+
+       function setGenerationUIState(patch) {
+           GENERATION_UI_STATE = {
+               ...GENERATION_UI_STATE,
+               ...patch,
+               updatedAtUtc: new Date().toISOString()
+           };
+           paintGenerationUIState();
+       }
+
+       function paintGenerationUIState() {
+           const statusEl = document.getElementById('gen-status-text');
+           const modelEl = document.getElementById('gen-model-tag');
+           const timeEl = document.getElementById('gen-updated-time');
+           const dotEl = document.getElementById('gen-status-dot');
+           if (!statusEl || !modelEl || !timeEl || !dotEl) return;
+
+           statusEl.textContent = `Generation: ${GENERATION_UI_STATE.message}`;
+           modelEl.textContent = `Model: ${GENERATION_UI_STATE.modelTag}`;
+           timeEl.textContent = `Updated: ${formatShortTime(GENERATION_UI_STATE.updatedAtUtc)}`;
+
+           dotEl.classList.remove('idle', 'running', 'ready', 'error');
+           dotEl.classList.add(GENERATION_UI_STATE.status || 'idle');
        }
 
        function inferUploaderFromImageUrl(imageUrl) {
@@ -205,6 +247,20 @@
                if (!normalized.uploaderEmail && inferredUploader) {
                    normalized.uploaderEmail = inferredUploader.uploaderEmail;
                }
+               if (typeof normalized.aiGenerated === 'undefined') {
+                   const looksLikeGenerated = String(normalized.id).startsWith('generated-') ||
+                       (normalized.imageUrl || '').includes('presigned-url-uploads.almostcrackd.ai');
+                   normalized.aiGenerated = looksLikeGenerated;
+               }
+               if (normalized.aiGenerated && !normalized.aiModelTag) {
+                   normalized.aiModelTag = 'caption-pipeline-v1';
+               }
+               if (normalized.aiGenerated && !normalized.generatedAtUtc) {
+                   normalized.generatedAtUtc = normalized.created_datetime_utc || new Date().toISOString();
+               }
+               if (normalized.aiGenerated && !normalized.generationStatus) {
+                   normalized.generationStatus = 'ready';
+               }
                byId.set(id, true);
                out.push(normalized);
            });
@@ -303,19 +359,32 @@
 
        function normalizeGeneratedCaptions(captions, cdnUrl) {
            const list = Array.isArray(captions) ? captions : [];
+           const generatedAtUtc = new Date().toISOString();
            return list.map((item, index) => ({
                ...item,
                id: item.id || item.caption_id || `generated-${Date.now()}-${index}`,
                content: item.content || item.caption_text || '',
                imageUrl: cdnUrl,
                uploaderName: item.uploaderName || CURRENT_UPLOADER_NAME || deriveUploaderNameFromEmail(CURRENT_USER_EMAIL),
-               uploaderEmail: item.uploaderEmail || CURRENT_USER_EMAIL || ''
+               uploaderEmail: item.uploaderEmail || CURRENT_USER_EMAIL || '',
+               aiGenerated: true,
+               aiModelTag: item.model || item.modelTag || 'caption-pipeline-v1',
+               generatedAtUtc: item.generatedAtUtc || item.created_datetime_utc || generatedAtUtc,
+               generationStatus: 'ready'
             }));
         }
 
        function renderUploaderMeta(item) {
            if (!item || !item.uploaderName) return '';
            return `<div class="uploader-meta">Uploaded by ${item.uploaderName}</div>`;
+       }
+
+       function renderAIMeta(item) {
+           if (!item || !item.aiGenerated) return '';
+           const model = item.aiModelTag || 'caption-pipeline-v1';
+           const generatedAt = formatShortTime(item.generatedAtUtc);
+           const status = item.generationStatus || 'ready';
+           return `<div class="ai-meta"><span class="ai-pill">AI</span><span class="ai-meta-text">${model}</span><span class="ai-meta-text">${generatedAt}</span><span class="ai-meta-text">${status}</span></div>`;
        }
 
        function extractGeneratedCaptions(step4Data) {
@@ -339,6 +408,11 @@
            }
 
            try {
+               setGenerationUIState({
+                   status: 'running',
+                   message: 'Preparing upload',
+                   modelTag: GENERATION_UI_STATE.modelTag || 'caption-pipeline-v1'
+               });
                setUploadStatus('Packing your image...');
                console.log('[Pipeline] Starting upload', { name: file.name, type: file.type, size: file.size });
                const token = await getAccessToken();
@@ -357,6 +431,7 @@
                const step1Data = await step1Res.json();
                const presignedUrl = step1Data.presignedUrl;
                const cdnUrl = step1Data.cdnUrl;
+               setGenerationUIState({ status: 'running', message: 'Uploading bytes' });
                console.log('[Pipeline Step 1] Success', { presignedUrl, cdnUrl });
 
                setUploadStatus('Uploading pixels...');
@@ -369,6 +444,7 @@
                    body: file
                }, 40000, 'Step 2');
                if (!step2Res.ok) throw new Error(`Step 2 failed: ${step2Res.status}`);
+               setGenerationUIState({ status: 'running', message: 'Registering image' });
                console.log('[Pipeline Step 2] Success');
 
                setUploadStatus('Registering your upload...');
@@ -387,6 +463,7 @@
                if (!step3Res.ok) throw new Error(`Step 3 failed: ${step3Res.status}`);
                const step3Data = await step3Res.json();
                const imageId = step3Data.imageId;
+               setGenerationUIState({ status: 'running', message: 'Generating captions' });
                console.log('[Pipeline Step 3] Success', { imageId });
 
                setUploadStatus('Generating caption options...');
@@ -401,11 +478,16 @@
                }, 45000, 'Step 4');
                if (!step4Res.ok) throw new Error(`Step 4 failed: ${step4Res.status}`);
                const step4Data = await step4Res.json();
+               const modelTag = extractModelTag(step4Data);
+               setGenerationUIState({ status: 'ready', message: 'Captions ready', modelTag });
                console.log('[Pipeline Step 4] Success', step4Data);
 
                const generated = extractGeneratedCaptions(step4Data);
                console.log('[Pipeline Step 4] Captions extracted', { count: generated.length });
                const newCaptions = normalizeGeneratedCaptions(generated, cdnUrl);
+               newCaptions.forEach(item => {
+                   item.aiModelTag = modelTag;
+               });
                if (newCaptions.length) {
                    generatedMemes = dedupeMemes([...newCaptions, ...generatedMemes]);
                    saveGeneratedMemes();
@@ -420,6 +502,7 @@
                switchView('upload');
            } catch (err) {
                console.error('[Pipeline] Upload flow failed', err);
+               setGenerationUIState({ status: 'error', message: 'Generation failed' });
                setUploadStatus(err.message || 'Upload failed.', true);
            }
        }
@@ -553,6 +636,16 @@
                    </button>
                </div>
                <section class="upload-view-panel">
+                   <div class="gen-status-panel">
+                       <div class="gen-status-row">
+                           <span id="gen-status-dot" class="gen-status-dot idle" aria-hidden="true"></span>
+                           <span id="gen-status-text">Generation: Waiting for a new upload</span>
+                       </div>
+                       <div class="gen-status-meta">
+                           <span id="gen-model-tag">Model: caption-pipeline-v1</span>
+                           <span id="gen-updated-time">Updated: n/a</span>
+                       </div>
+                   </div>
                    <div class="upload-wrapper">
                        <label class="upload-label" for="image-upload">Upload a New Image</label>
                        <input
@@ -583,6 +676,7 @@
                        <img src="${displayUrl}" class="meme-image" alt="Meme"
                             onerror="this.onerror=null; this.src='${fallbackGif}';">
                        <div class="card-content">${item.content}</div>
+                       ${renderAIMeta(item)}
                        ${renderUploaderMeta(item)}
                        <div class="actions">
                            <div class="vote-controls">
@@ -603,6 +697,7 @@
 
            html += '</section>';
            container.innerHTML = html;
+           paintGenerationUIState();
            setupUpload();
        }
 
@@ -634,6 +729,7 @@
                             onerror="this.onerror=null; this.src='${fallbackGif}';">
                       
                        <div class="card-content">${item.content}</div>
+                       ${renderAIMeta(item)}
                        ${renderUploaderMeta(item)}
 
                        <div class="actions">
@@ -705,6 +801,7 @@
                        <img src="${displayUrl}" class="meme-image" alt="Meme"
                             onerror="this.onerror=null; this.src='${fallbackGif}';">
                        <div class="card-content">${item.content}</div>
+                       ${renderAIMeta(item)}
                        ${renderUploaderMeta(item)}
                        <div class="actions">
                            <div class="vote-controls">
