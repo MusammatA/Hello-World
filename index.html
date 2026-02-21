@@ -97,6 +97,17 @@
            CURRENT_USER_EMAIL = user?.email || '';
            CURRENT_UPLOADER_NAME = deriveUploaderNameFromEmail(CURRENT_USER_EMAIL);
        }
+
+       function inferUploaderFromImageUrl(imageUrl) {
+           if (!imageUrl || !CURRENT_USER_ID) return null;
+           const urlText = String(imageUrl);
+           const pathNeedle = `/${CURRENT_USER_ID}/`;
+           if (!urlText.includes(pathNeedle)) return null;
+           return {
+               uploaderName: CURRENT_UPLOADER_NAME || deriveUploaderNameFromEmail(CURRENT_USER_EMAIL),
+               uploaderEmail: CURRENT_USER_EMAIL || ''
+           };
+       }
       
        function logMsg(msg, color = "#fff") {
            const box = document.getElementById('click-logger');
@@ -187,6 +198,13 @@
                    content: item.content || item.caption_text || '',
                    imageUrl: item.imageUrl || item.url || null
                };
+               const inferredUploader = inferUploaderFromImageUrl(normalized.imageUrl);
+               if (!normalized.uploaderName && inferredUploader) {
+                   normalized.uploaderName = inferredUploader.uploaderName;
+               }
+               if (!normalized.uploaderEmail && inferredUploader) {
+                   normalized.uploaderEmail = inferredUploader.uploaderEmail;
+               }
                byId.set(id, true);
                out.push(normalized);
            });
