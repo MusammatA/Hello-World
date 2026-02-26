@@ -665,7 +665,16 @@
            };
            const { data, error } = await client.from('caption_comments').insert(payload).select('*').limit(1);
            if (error) {
-               alert(`Comment failed: ${error.message}`);
+               const message = String(error.message || '');
+               const lower = message.toLowerCase();
+               const isMissingTable = lower.includes('does not exist') || lower.includes('relation') || lower.includes('not found');
+               if (isMissingTable) {
+                   commentsEnabled = false;
+                   console.warn('[Comments] disabled because caption_comments table is unavailable');
+                   renderCurrentView();
+                   return;
+               }
+               alert(`Comment failed: ${message}`);
                return;
            }
            const inserted = data && data[0] ? data[0] : payload;
