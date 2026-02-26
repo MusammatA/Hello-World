@@ -65,6 +65,7 @@
        let imageUrlById = {};
        let AUTO_REFRESH_TIMER = null;
        let ACCOUNT_ACTION_MESSAGE = '';
+       let uploaderSearchTerm = '';
        let GENERATION_UI_STATE = {
            status: 'idle',
            modelTag: 'caption-pipeline-v1',
@@ -161,6 +162,18 @@
                uploaderName: CURRENT_UPLOADER_NAME || deriveUploaderNameFromEmail(CURRENT_USER_EMAIL),
                uploaderEmail: CURRENT_USER_EMAIL || ''
            };
+       }
+
+       function parseUploaderUserIdFromImageUrl(imageUrl) {
+           if (!imageUrl) return '';
+           try {
+               const urlObj = new URL(String(imageUrl));
+               const parts = urlObj.pathname.split('/').filter(Boolean);
+               return parts[0] || '';
+           } catch (_err) {
+               const match = String(imageUrl).match(/almostcrackd\.ai\/([^/]+)\//i);
+               return match ? match[1] : '';
+           }
        }
       
        function logMsg(msg, color = "#fff") {
@@ -329,6 +342,51 @@
            return Array.from(groups.values()).sort((a, b) => (b.captions.length - a.captions.length));
        }
 
+       function getUploaderKey(item) {
+           if (!item) return '';
+           return item.uploaderUserId || item.uploaderEmail || item.uploaderName || `unknown-${item.id}`;
+       }
+
+       function getUploaderLabel(item) {
+           if (!item) return 'Unknown uploader';
+           if (item.uploaderName) return item.uploaderName;
+           if (item.uploaderEmail) return item.uploaderEmail;
+           if (item.uploaderUserId) return `User ${item.uploaderUserId.slice(0, 8)}`;
+           return 'Unknown uploader';
+       }
+
+       function getUploadsByUploader(searchTerm = '') {
+           const term = String(searchTerm || '').toLowerCase().trim();
+           const groups = new Map();
+
+           allMemes.forEach(item => {
+               const key = getUploaderKey(item);
+               if (!key) return;
+               const existing = groups.get(key) || {
+                   key,
+                   label: getUploaderLabel(item),
+                   uploaderName: item.uploaderName || '',
+                   uploaderEmail: item.uploaderEmail || '',
+                   uploaderUserId: item.uploaderUserId || '',
+                   items: [],
+                   imageIds: new Set()
+               };
+               existing.items.push(item);
+               if (item.image_id) existing.imageIds.add(item.image_id);
+               groups.set(key, existing);
+           });
+
+           return Array.from(groups.values())
+               .map(group => ({
+                   ...group,
+                   totalCaptions: group.items.length,
+                   totalImages: group.imageIds.size,
+                   searchValue: `${group.label} ${group.uploaderName} ${group.uploaderEmail} ${group.uploaderUserId}`.toLowerCase()
+               }))
+               .filter(group => !term || group.searchValue.includes(term))
+               .sort((a, b) => b.totalCaptions - a.totalCaptions);
+       }
+
        function dedupeMemes(memes) {
            const byId = new Map();
            const out = [];
@@ -342,6 +400,9 @@
                    content: item.content || item.caption_text || '',
                    imageUrl: item.imageUrl || item.url || null
                };
+               if (!normalized.uploaderUserId) {
+                   normalized.uploaderUserId = parseUploaderUserIdFromImageUrl(normalized.imageUrl);
+               }
                const inferredUploader = inferUploaderFromImageUrl(normalized.imageUrl);
                if (!normalized.uploaderName && inferredUploader) {
                    normalized.uploaderName = inferredUploader.uploaderName;
@@ -741,6 +802,22 @@
            ACCOUNT_ACTION_MESSAGE = 'Display name updated across your uploads.';
            renderCurrentView();
        }
+
+       function clearUploaderSearch() {
+           uploaderSearchTerm = '';
+           renderCurrentView();
+       }
+
+       function setupUploaderSearch() {
+           const oldInput = document.getElementById('uploader-search-input');
+           if (!oldInput) return;
+           const newInput = oldInput.cloneNode(true);
+           oldInput.parentNode.replaceChild(newInput, oldInput);
+           newInput.addEventListener('input', (e) => {
+               uploaderSearchTerm = e.target.value.toLowerCase();
+               renderCurrentView();
+           });
+       }
       
        async function renderApp() {
            const container = document.getElementById('content-view');
@@ -939,6 +1016,8 @@
 
        function renderAccountView(container) {
            const ownedUploads = getOwnedUploads();
+           const uploaderGroups = getUploadsByUploader(uploaderSearchTerm);
+           const totalUploaderGroups = getUploadsByUploader('').length;
            const displayName = getCurrentDisplayName();
            let html = `
                ${renderHeaderActions(false)}
@@ -979,8 +1058,49 @@
                });
                html += `</div>`;
            }
+           html += `</section>
+               <section class="account-panel">
+                   <h3 class="account-title">Find Other Uploaders</h3>
+                   <div class="account-name-controls">
+                       <input id="uploader-search-input" class="account-name-input" placeholder="Search by name, email, or user id..." value="${uploaderSearchTerm}">
+                       <button class="logout-btn" onclick="clearUploaderSearch()">
+                           <i class="fa-solid fa-xmark"></i> Clear
+                       </button>
+                   </div>
+                   <div class="account-row">Showing ${uploaderGroups.length} of ${totalUploaderGroups} uploaders</div>`;
+
+           if (!uploaderGroups.length) {
+               html += `<p class="upload-empty">No users match that search.</p>`;
+           } else {
+               html += `<div class="uploader-directory">`;
+               uploaderGroups.forEach(group => {
+                   const previews = group.items.slice(0, 4);
+                   html += `
+                       <article class="uploader-card">
+                           <div class="uploader-card-head">
+                               <div class="uploader-card-title">${group.label}</div>
+                               <div class="uploader-card-meta">${group.totalCaptions} captions · ${group.totalImages} images</div>
+                           </div>
+                           <div class="uploader-preview-grid">`;
+                   previews.forEach(item => {
+                       const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
+                       const displayUrl = item.imageUrl || fallbackGif;
+                       html += `
+                               <div class="uploader-preview-item">
+                                   <img src="${displayUrl}" class="uploader-preview-image" alt="Uploader meme preview">
+                                   <div class="uploader-preview-caption">${item.content || ''}</div>
+                               </div>`;
+                   });
+                   html += `
+                           </div>
+                       </article>`;
+               });
+               html += `</div>`;
+           }
+
            html += `</section>`;
            container.innerHTML = html;
+           setupUploaderSearch();
        }
 
        function renderGrid(memes, container) {
