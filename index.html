@@ -69,6 +69,10 @@
        let AUTO_REFRESH_TIMER = null;
        let ACCOUNT_ACTION_MESSAGE = '';
        let uploaderSearchTerm = '';
+       let UPLOAD_IN_FLIGHT = false;
+       let LAST_UPLOAD_AT = 0;
+       let VISIBILITY_HOOK_SET = false;
+       const VOTE_COOLDOWNS = {};
        let GENERATION_UI_STATE = {
            status: 'idle',
            modelTag: 'caption-pipeline-v1',
@@ -79,6 +83,9 @@
        const GENERATED_MEMES_KEY_PREFIX = 'generated_memes_v1_';
        const PIPELINE_BASE_URL = 'https://api.almostcrackd.ai';
        const FEED_REFRESH_MS = 30000;
+       const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+       const UPLOAD_COOLDOWN_MS = 2500;
+       const VOTE_COOLDOWN_MS = 450;
        const SUPPORTED_IMAGE_TYPES = new Set([
            'image/jpeg',
            'image/jpg',
@@ -93,6 +100,27 @@
                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
            }
            return supabaseClient;
+       }
+
+       function escapeHtml(value) {
+           return String(value ?? '')
+               .replace(/&/g, '&amp;')
+               .replace(/</g, '&lt;')
+               .replace(/>/g, '&gt;')
+               .replace(/"/g, '&quot;')
+               .replace(/'/g, '&#39;');
+       }
+
+       function safePreviewText(value, max = 180) {
+           const text = String(value ?? '').trim();
+           return escapeHtml(text.length > max ? `${text.slice(0, max)}...` : text);
+       }
+
+       function safeUrl(url, fallback) {
+           const candidate = String(url || '').trim();
+           if (!candidate) return fallback;
+           if (candidate.startsWith('https://') || candidate.startsWith('http://')) return candidate;
+           return fallback;
        }
 
        function toTitleCase(value) {
@@ -541,7 +569,7 @@
 
        function renderUploaderMeta(item) {
            if (!item || !item.uploaderName) return '';
-           return `<div class="uploader-meta">Uploaded by ${item.uploaderName}</div>`;
+           return `<div class="uploader-meta">Uploaded by ${escapeHtml(item.uploaderName)}</div>`;
        }
 
        function renderHeaderActions(showRefresh = true) {
@@ -559,9 +587,9 @@
 
        function renderAIMeta(item) {
            if (!item || !item.aiGenerated) return '';
-           const model = item.aiModelTag || 'caption-pipeline-v1';
+           const model = escapeHtml(item.aiModelTag || 'caption-pipeline-v1');
            const generatedAt = formatShortTime(item.generatedAtUtc);
-           const status = item.generationStatus || 'ready';
+           const status = escapeHtml(item.generationStatus || 'ready');
            return `<div class="ai-meta"><span class="ai-pill">AI</span><span class="ai-meta-text">${model}</span><span class="ai-meta-text">${generatedAt}</span><span class="ai-meta-text">${status}</span></div>`;
        }
 
@@ -580,12 +608,27 @@
 
        async function handleImageUpload(file) {
            if (!file) return;
+           const nowMs = Date.now();
+           if (UPLOAD_IN_FLIGHT) {
+               setUploadStatus('Upload already in progress. Please wait.', true);
+               return;
+           }
+           if (nowMs - LAST_UPLOAD_AT < UPLOAD_COOLDOWN_MS) {
+               setUploadStatus('Please wait a moment before uploading again.', true);
+               return;
+           }
            if (!SUPPORTED_IMAGE_TYPES.has(file.type)) {
                setUploadStatus(`That file type is not supported: ${file.type || 'unknown'}`, true);
                return;
            }
+           if (file.size > MAX_UPLOAD_BYTES) {
+               setUploadStatus(`File too large. Max size is ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))}MB.`, true);
+               return;
+           }
 
            try {
+               UPLOAD_IN_FLIGHT = true;
+               LAST_UPLOAD_AT = nowMs;
                const client = getClient();
                setGenerationUIState({
                    status: 'running',
@@ -697,6 +740,8 @@
                console.error('[Pipeline] Upload flow failed', err);
                setGenerationUIState({ status: 'error', message: 'Generation failed' });
                setUploadStatus(err.message || 'Upload failed.', true);
+           } finally {
+               UPLOAD_IN_FLIGHT = false;
            }
        }
 
@@ -713,6 +758,7 @@
        }
 
        async function refreshFeed(showNotice = false) {
+           if (!CURRENT_USER_ID) return;
            const container = document.getElementById('content-view');
            const client = getClient();
            await fetchAndShowMemes(client, container);
@@ -721,7 +767,16 @@
 
        function startAutoRefresh() {
            if (AUTO_REFRESH_TIMER) clearInterval(AUTO_REFRESH_TIMER);
+           if (!VISIBILITY_HOOK_SET) {
+               document.addEventListener('visibilitychange', () => {
+                   if (!document.hidden) {
+                       refreshFeed(false).catch(err => console.error('[AutoRefresh]', err));
+                   }
+               });
+               VISIBILITY_HOOK_SET = true;
+           }
            AUTO_REFRESH_TIMER = setInterval(() => {
+               if (document.hidden) return;
                refreshFeed(false).catch(err => console.error('[AutoRefresh]', err));
            }, FEED_REFRESH_MS);
        }
@@ -751,6 +806,13 @@
                generatedMemes = generatedMemes.filter(item => item.id !== localCaptionId);
                saveGeneratedMemes();
                ACCOUNT_ACTION_MESSAGE = 'Deleted local upload.';
+               renderCurrentView();
+               return;
+           }
+
+           const ownedCandidate = allMemes.find(item => item.image_id === imageId && isOwnedByCurrentUser(item));
+           if (!ownedCandidate) {
+               ACCOUNT_ACTION_MESSAGE = 'Delete blocked: you can only delete your own uploads.';
                renderCurrentView();
                return;
            }
@@ -839,20 +901,21 @@
            let html = `<div class="uploader-directory">`;
            uploaderGroups.forEach(group => {
                const previews = group.items.slice(0, 4);
+               const safeLabel = escapeHtml(group.label);
                html += `
                    <article class="uploader-card">
                        <div class="uploader-card-head">
-                           <div class="uploader-card-title">${group.label}</div>
+                           <div class="uploader-card-title">${safeLabel}</div>
                            <div class="uploader-card-meta">${group.totalCaptions} captions · ${group.totalImages} images</div>
                        </div>
                        <div class="uploader-preview-grid">`;
                previews.forEach(item => {
                    const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
-                   const displayUrl = item.imageUrl || fallbackGif;
+                   const displayUrl = safeUrl(item.imageUrl, fallbackGif);
                    html += `
                            <div class="uploader-preview-item">
                                <img src="${displayUrl}" class="uploader-preview-image" alt="Uploader meme preview">
-                               <div class="uploader-preview-caption">${item.content || ''}</div>
+                               <div class="uploader-preview-caption">${safePreviewText(item.content || '')}</div>
                            </div>`;
                });
                html += `
@@ -1026,7 +1089,9 @@
                html += '<ul>';
                generatedMemes.forEach(item => {
                    const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
-                   const displayUrl = item.imageUrl || fallbackGif;
+                   const displayUrl = safeUrl(item.imageUrl, fallbackGif);
+                   const safeContent = safePreviewText(item.content);
+                   const safeShortId = escapeHtml(String(item.id || '').substring(0, 4));
 
                    const stats = voteStats[item.id] || { total: 0, myVote: 0 };
                    const upActive = stats.myVote === 1 ? 'active up' : '';
@@ -1036,7 +1101,7 @@
                    <li id="card-${item.id}">
                        <img src="${displayUrl}" class="meme-image" alt="Meme"
                             onerror="this.onerror=null; this.src='${fallbackGif}';">
-                       <div class="card-content">${item.content}</div>
+                       <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
                        ${renderUploaderMeta(item)}
                        <div class="actions">
@@ -1049,7 +1114,7 @@
                                    <i class="fa-solid fa-arrow-down"></i>
                                </button>
                            </div>
-                           <small style="color:#aaa;">ID: ${item.id.substring(0,4)}</small>
+                           <small style="color:#aaa;">ID: ${safeShortId}</small>
                        </div>
                    </li>`;
                });
@@ -1065,21 +1130,24 @@
        function renderAccountView(container) {
            const ownedUploads = getOwnedUploads();
            const displayName = getCurrentDisplayName();
+           const safeEmail = escapeHtml(CURRENT_USER_EMAIL || 'Not available');
+           const safeDisplayName = escapeHtml(displayName);
+           const safeAccountMessage = ACCOUNT_ACTION_MESSAGE ? escapeHtml(ACCOUNT_ACTION_MESSAGE) : '';
            let html = `
                ${renderHeaderActions(false)}
                <section class="account-panel">
                    <h3 class="account-title">Your Account</h3>
-                   <div class="account-row"><strong>Email:</strong> <span>${CURRENT_USER_EMAIL || 'Not available'}</span></div>
+                   <div class="account-row"><strong>Email:</strong> <span>${safeEmail}</span></div>
                    <div class="account-row">
                        <strong>Display name:</strong>
                        <div class="account-name-controls">
-                           <input id="display-name-input" class="account-name-input" value="${displayName}" />
+                           <input id="display-name-input" class="account-name-input" value="${safeDisplayName}" />
                            <button class="logout-btn" onclick="handleSaveDisplayName()">
                                <i class="fa-solid fa-floppy-disk"></i> Save
                            </button>
                        </div>
                    </div>
-                   ${ACCOUNT_ACTION_MESSAGE ? `<div class="account-message">${ACCOUNT_ACTION_MESSAGE}</div>` : ''}
+                   ${safeAccountMessage ? `<div class="account-message">${safeAccountMessage}</div>` : ''}
                </section>
                <section class="account-panel">
                    <h3 class="account-title">Your Uploads (${ownedUploads.length})</h3>`;
@@ -1090,11 +1158,13 @@
                html += `<div class="account-upload-list">`;
                ownedUploads.forEach(group => {
                    const preview = group.imageUrl || "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
+                   const safePreview = safeUrl(preview, preview);
+                   const safeImageId = escapeHtml(group.imageId);
                    html += `
                        <article class="account-upload-item">
-                           <img class="account-upload-preview" src="${preview}" alt="Upload preview">
+                           <img class="account-upload-preview" src="${safePreview}" alt="Upload preview">
                            <div class="account-upload-meta">
-                               <div><strong>Image ID:</strong> ${group.imageId}</div>
+                               <div><strong>Image ID:</strong> ${safeImageId}</div>
                                <div><strong>Captions:</strong> ${group.captions.length}</div>
                            </div>
                            <button class="logout-btn danger" onclick="deleteUploadByImageId('${group.imageId}')">
@@ -1114,7 +1184,7 @@
                <section class="account-panel">
                    <h3 class="account-title">Find Other Uploaders</h3>
                    <div class="account-name-controls">
-                       <input id="uploader-search-input" class="account-name-input" placeholder="Search by Columbia email..." value="${uploaderSearchTerm}">
+                       <input id="uploader-search-input" class="account-name-input" placeholder="Search by Columbia email..." value="${escapeHtml(uploaderSearchTerm)}">
                        <button class="logout-btn" onclick="clearUploaderSearch()">
                            <i class="fa-solid fa-xmark"></i> Clear
                        </button>
@@ -1139,7 +1209,9 @@
           
            memes.forEach(item => {
                const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
-               const displayUrl = item.imageUrl || fallbackGif;
+               const displayUrl = safeUrl(item.imageUrl, fallbackGif);
+               const safeContent = safePreviewText(item.content);
+               const safeShortId = escapeHtml(String(item.id || '').substring(0, 4));
               
                const stats = voteStats[item.id] || { total: 0, myVote: 0 };
                const upActive = stats.myVote === 1 ? 'active up' : '';
@@ -1150,7 +1222,7 @@
                        <img src="${displayUrl}" class="meme-image" alt="Meme"
                             onerror="this.onerror=null; this.src='${fallbackGif}';">
                       
-                       <div class="card-content">${item.content}</div>
+                       <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
                        ${renderUploaderMeta(item)}
 
@@ -1166,7 +1238,7 @@
                                    <i class="fa-solid fa-arrow-down"></i>
                                </button>
                            </div>
-                           <small style="color:#aaa;">ID: ${item.id.substring(0,4)}</small>
+                           <small style="color:#aaa;">ID: ${safeShortId}</small>
                        </div>
                    </li>`;
            });
@@ -1199,7 +1271,8 @@
 
            const item = memes[swipeIndex];
            const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
-           const displayUrl = item.imageUrl || fallbackGif;
+           const displayUrl = safeUrl(item.imageUrl, fallbackGif);
+           const safeContent = safePreviewText(item.content);
            const stats = voteStats[item.id] || { total: 0, myVote: 0 };
 
            container.innerHTML = `
@@ -1214,7 +1287,7 @@
                    <div class="swipe-card" id="swipe-card-${item.id}">
                        <img src="${displayUrl}" class="meme-image" alt="Meme"
                             onerror="this.onerror=null; this.src='${fallbackGif}';">
-                       <div class="card-content">${item.content}</div>
+                       <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
                        ${renderUploaderMeta(item)}
                        <div class="actions">
@@ -1311,6 +1384,12 @@
 
        async function handleVote(captionId, newValue, suppressGridUI = false, forceSet = false) {
            if (!CURRENT_USER_ID) { alert("Please sign in first."); return; }
+           const voteKey = `${CURRENT_USER_ID}:${captionId}`;
+           const nowMs = Date.now();
+           if (VOTE_COOLDOWNS[voteKey] && (nowMs - VOTE_COOLDOWNS[voteKey] < VOTE_COOLDOWN_MS)) {
+               return;
+           }
+           VOTE_COOLDOWNS[voteKey] = nowMs;
 
            try {
                const client = getClient();
