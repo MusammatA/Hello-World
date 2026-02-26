@@ -221,6 +221,45 @@
            selectedCommunityName = ensureCommunityExists(selectedCommunityName || 'General');
        }
 
+       async function hydrateCommunitiesFromProfile(user) {
+           try {
+               const profileCommunities = Array.isArray(user?.user_metadata?.communities)
+                   ? user.user_metadata.communities.map(normalizeCommunityName).filter(Boolean)
+                   : [];
+               if (!profileCommunities.length) return;
+               communities = ['General', ...communities, ...profileCommunities]
+                   .map(normalizeCommunityName)
+                   .filter(Boolean)
+                   .filter((v, i, arr) => arr.indexOf(v) === i);
+               selectedCommunityName = ensureCommunityExists(selectedCommunityName || 'General');
+               saveCommunityState();
+           } catch (_err) {}
+       }
+
+       async function syncCommunitiesToProfile() {
+           if (!CURRENT_USER_ID) return;
+           try {
+               const client = getClient();
+               const target = Array.from(new Set((communities || []).map(normalizeCommunityName).filter(Boolean)));
+               const { data: { user }, error } = await client.auth.getUser();
+               if (error || !user) return;
+               const existing = Array.isArray(user.user_metadata?.communities)
+                   ? user.user_metadata.communities.map(normalizeCommunityName).filter(Boolean)
+                   : [];
+               const sameLength = existing.length === target.length;
+               const sameItems = sameLength && existing.every((item, idx) => item === target[idx]);
+               if (sameItems) return;
+               await client.auth.updateUser({
+                   data: {
+                       ...(user.user_metadata || {}),
+                       communities: target
+                   }
+               });
+           } catch (err) {
+               console.warn('[Communities] profile sync failed', err);
+           }
+       }
+
        function getMemeCommunity(item) {
            if (!item) return 'General';
            return item.communityName
@@ -943,6 +982,7 @@
            communityCreateMessage = `Community "${name}" is ready.`;
            input.value = '';
            saveCommunityState();
+           syncCommunitiesToProfile().catch(err => console.warn('[Communities] sync error', err));
            renderCurrentView();
        }
 
@@ -1144,6 +1184,7 @@
                setCurrentUserIdentity(session.user);
                CURRENT_UPLOADER_NAME = getCurrentDisplayName();
                loadCommunityState();
+               await hydrateCommunitiesFromProfile(session.user);
                sidebar.style.display = 'flex';
                document.body.classList.add('has-sidebar');
                startAutoRefresh();
@@ -1177,6 +1218,7 @@
                    setCurrentUserIdentity(currentSession.user);
                    CURRENT_UPLOADER_NAME = getCurrentDisplayName();
                    loadCommunityState();
+                   await hydrateCommunitiesFromProfile(currentSession.user);
                    sidebar.style.display = 'flex';
                    document.body.classList.add('has-sidebar');
                    startAutoRefresh();
