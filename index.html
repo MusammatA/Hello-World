@@ -1446,6 +1446,9 @@
            const communityOptions = communities
                .map(name => `<option value="${escapeHtml(name)}" ${name === selectedCommunityName ? 'selected' : ''}>${escapeHtml(name)}</option>`)
                .join('');
+           const communityChips = communities
+               .map(name => `<button class="community-chip ${name === selectedCommunityName ? 'active' : ''}" data-community="${escapeHtml(name)}">${escapeHtml(name)}</button>`)
+               .join('');
            const scopedMemes = allMemes.filter(item => getMemeCommunity(item) === selectedCommunityName);
 
            let html = `
@@ -1461,6 +1464,7 @@
                    <div class="community-controls">
                        <label for="community-select">Active community</label>
                        <select id="community-select" class="account-name-input">${communityOptions}</select>
+                       <div class="community-chip-row" id="community-chip-row">${communityChips}</div>
                    </div>
                    <div class="upload-wrapper">
                        <label class="upload-label" for="community-image-upload">Upload to ${escapeHtml(selectedCommunityName)}</label>
@@ -1523,6 +1527,10 @@
            if (createBtn) createBtn.addEventListener('click', handleCreateCommunity);
            if (uploadBtn) uploadBtn.addEventListener('click', handleCommunityUploadClick);
            if (selectEl) selectEl.addEventListener('change', (e) => handleCommunitySelection(e.target.value));
+           const chipButtons = document.querySelectorAll('#community-chip-row .community-chip');
+           chipButtons.forEach(btn => {
+               btn.addEventListener('click', () => handleCommunitySelection(btn.dataset.community || 'General'));
+           });
            if (titleInput) {
                titleInput.addEventListener('keydown', (e) => {
                    if (e.key === 'Enter') handleCreateCommunity();
