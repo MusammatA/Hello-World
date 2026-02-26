@@ -640,10 +640,18 @@
        }
 
        function setUploadStatus(message, isError = false) {
-           const status = document.getElementById('upload-status');
-           if (!status) return;
-           status.textContent = message || '';
-           status.classList.toggle('error', Boolean(isError));
+           const messageText = message || '';
+           const statusNodes = [
+               document.getElementById('upload-status'),
+               document.getElementById('community-upload-status')
+           ].filter(Boolean);
+           if (!statusNodes.length) return;
+           statusNodes.forEach(status => {
+               status.textContent = messageText;
+               status.classList.toggle('error', Boolean(isError));
+               status.classList.toggle('running', !isError && !!messageText);
+           });
+           communityUploadStatus = messageText;
        }
 
        function normalizeGeneratedCaptions(captions, cdnUrl, imageId = null) {
@@ -902,11 +910,23 @@
            if (!oldInput) return;
            const newInput = oldInput.cloneNode(true);
            oldInput.parentNode.replaceChild(newInput, oldInput);
-           newInput.addEventListener('change', async (e) => {
+           newInput.addEventListener('change', (e) => {
                const file = e.target.files && e.target.files[0];
-               await handleImageUpload(file, selectedCommunityName);
-               newInput.value = '';
+               if (!file) return;
+               setUploadStatus(`Ready to upload: ${file.name}`);
            });
+       }
+
+       async function handleCommunityUploadClick() {
+           const input = document.getElementById('community-image-upload');
+           if (!input) return;
+           const file = input.files && input.files[0];
+           if (!file) {
+               setUploadStatus('Select an image first.', true);
+               return;
+           }
+           await handleImageUpload(file, selectedCommunityName);
+           input.value = '';
        }
 
        function handleCreateCommunity() {
@@ -1445,7 +1465,10 @@
                    <div class="upload-wrapper">
                        <label class="upload-label" for="community-image-upload">Upload to ${escapeHtml(selectedCommunityName)}</label>
                        <input type="file" id="community-image-upload" accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,image/heic">
-                       <div class="upload-status">${escapeHtml(communityUploadStatus || '')}</div>
+                       <button class="logout-btn" id="community-upload-btn">
+                           <i class="fa-solid fa-cloud-arrow-up"></i> Upload to Community
+                       </button>
+                       <div class="upload-status" id="community-upload-status">${escapeHtml(communityUploadStatus || '')}</div>
                    </div>
                    ${communityCreateMessage ? `<div class="account-message">${escapeHtml(communityCreateMessage)}</div>` : ''}
                </section>
@@ -1496,7 +1519,9 @@
            const createBtn = document.getElementById('create-community-btn');
            const selectEl = document.getElementById('community-select');
            const titleInput = document.getElementById('community-title-input');
+           const uploadBtn = document.getElementById('community-upload-btn');
            if (createBtn) createBtn.addEventListener('click', handleCreateCommunity);
+           if (uploadBtn) uploadBtn.addEventListener('click', handleCommunityUploadClick);
            if (selectEl) selectEl.addEventListener('change', (e) => handleCommunitySelection(e.target.value));
            if (titleInput) {
                titleInput.addEventListener('keydown', (e) => {
