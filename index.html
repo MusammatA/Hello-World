@@ -87,6 +87,7 @@
        let communityByImageId = {};
        let IS_PHONE_CLIENT = false;
        let MOBILE_NAV_OPEN = false;
+       let PENDING_CREATE_UPLOAD_FILE = null;
        let UPLOAD_IN_FLIGHT = false;
        let LAST_UPLOAD_AT = 0;
        let VISIBILITY_HOOK_SET = false;
@@ -1041,6 +1042,7 @@
                if (targetCommunity) communityUploadStatus = err.message || 'Upload failed.';
            } finally {
                UPLOAD_IN_FLIGHT = false;
+               if (!targetCommunity) PENDING_CREATE_UPLOAD_FILE = null;
            }
        }
 
@@ -1052,6 +1054,7 @@
            newInput.addEventListener('change', (e) => {
                const file = e.target.files && e.target.files[0];
                if (!file) return;
+               PENDING_CREATE_UPLOAD_FILE = file;
                setUploadStatus(`Ready to upload: ${file.name}`);
                setCreateProgress(0, 'Ready');
            });
@@ -1060,7 +1063,7 @@
        async function handleCreateUploadClick() {
            const input = document.getElementById('image-upload');
            if (!input) return;
-           const file = input.files && input.files[0];
+           const file = PENDING_CREATE_UPLOAD_FILE || (input.files && input.files[0]);
            if (!file) {
                setUploadStatus('Select an image first.', true);
                setCreateProgress(0, 'No file selected');
@@ -1068,6 +1071,7 @@
            }
            await handleImageUpload(file);
            input.value = '';
+           PENDING_CREATE_UPLOAD_FILE = null;
        }
 
        function setupCommunityUploadInput() {
@@ -1135,6 +1139,7 @@
            if (!VISIBILITY_HOOK_SET) {
                document.addEventListener('visibilitychange', () => {
                    if (!document.hidden) {
+                       if (currentView === 'upload' || currentView === 'communities' || currentView === 'account' || currentView === 'discover') return;
                        refreshFeed(false).catch(err => console.error('[AutoRefresh]', err));
                    }
                });
@@ -1142,6 +1147,7 @@
            }
            AUTO_REFRESH_TIMER = setInterval(() => {
                if (document.hidden) return;
+               if (currentView === 'upload' || currentView === 'communities' || currentView === 'account' || currentView === 'discover') return;
                refreshFeed(false).catch(err => console.error('[AutoRefresh]', err));
            }, FEED_REFRESH_MS);
        }

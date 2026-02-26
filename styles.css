@@ -27,6 +27,12 @@ body {
     radial-gradient(900px 420px at 110% 0%, rgba(255, 79, 179, 0.14), transparent 45%),
     linear-gradient(165deg, var(--bg) 0%, var(--bg-soft) 100%);
   min-height: 100vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+html {
+  overflow-y: auto;
 }
 
 .container {
