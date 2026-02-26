@@ -27,6 +27,9 @@
       <button id="tab-account" class="side-tab" onclick="switchView('account')">
          <i class="fa-solid fa-user-gear"></i> Account
       </button>
+      <button id="tab-discover" class="side-tab" onclick="switchView('discover')">
+         <i class="fa-solid fa-user-group"></i> Find Users
+      </button>
    </aside>
 
    <div class="container">
@@ -191,17 +194,19 @@
            const swipeBtn = document.getElementById('tab-swipe');
            const uploadBtn = document.getElementById('tab-upload');
            const accountBtn = document.getElementById('tab-account');
-           if (!gridBtn || !swipeBtn || !uploadBtn || !accountBtn) return;
+           const discoverBtn = document.getElementById('tab-discover');
+           if (!gridBtn || !swipeBtn || !uploadBtn || !accountBtn || !discoverBtn) return;
            gridBtn.classList.toggle('active', currentView === 'grid');
            swipeBtn.classList.toggle('active', currentView === 'swipe');
            uploadBtn.classList.toggle('active', currentView === 'upload');
            accountBtn.classList.toggle('active', currentView === 'account');
+           discoverBtn.classList.toggle('active', currentView === 'discover');
        }
 
        function updateTopControls() {
            const searchBar = document.querySelector('.search-wrapper');
            if (!searchBar) return;
-           searchBar.style.display = (currentView === 'upload' || currentView === 'account') ? 'none' : 'block';
+           searchBar.style.display = (currentView === 'upload' || currentView === 'account' || currentView === 'discover') ? 'none' : 'block';
        }
 
        function getFilteredMemes() {
@@ -978,6 +983,10 @@
                renderAccountView(container);
                return;
            }
+           if (currentView === 'discover') {
+               renderDiscoverView(container);
+               return;
+           }
            const memes = getFilteredMemes();
            if (currentView === 'swipe') renderSwipe(memes, container);
            else renderGrid(memes, container);
@@ -1095,7 +1104,13 @@
                });
                html += `</div>`;
            }
-           html += `</section>
+           html += `</section>`;
+           container.innerHTML = html;
+       }
+
+       function renderDiscoverView(container) {
+           let html = `
+               ${renderHeaderActions(false)}
                <section class="account-panel">
                    <h3 class="account-title">Find Other Uploaders</h3>
                    <div class="account-name-controls">
@@ -1105,9 +1120,8 @@
                        </button>
                    </div>
                    <div class="account-row" id="uploader-count-label">Showing 0 of 0 uploaders</div>
-                   <div id="uploader-directory-container"></div>`;
-
-           html += `</section>`;
+                   <div id="uploader-directory-container"></div>
+               </section>`;
            container.innerHTML = html;
            setupUploaderSearch();
            renderUploaderDirectorySection();
