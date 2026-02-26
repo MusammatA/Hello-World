@@ -77,11 +77,6 @@
        let LAST_UPLOAD_AT = 0;
        let VISIBILITY_HOOK_SET = false;
        const VOTE_COOLDOWNS = {};
-       const COMMENT_COOLDOWNS = {};
-       let commentsByCaption = {};
-       let localCommentsByCaption = {};
-       let commentsEnabled = true;
-       let commentsDbAvailable = true;
        let GENERATION_UI_STATE = {
            status: 'idle',
            modelTag: 'caption-pipeline-v1',
@@ -90,13 +85,11 @@
        };
        const SWIPE_PROGRESS_KEY_PREFIX = 'swipe_progress_v1_';
        const GENERATED_MEMES_KEY_PREFIX = 'generated_memes_v1_';
-       const LOCAL_COMMENTS_KEY_PREFIX = 'local_comments_v1_';
        const PIPELINE_BASE_URL = 'https://api.almostcrackd.ai';
        const FEED_REFRESH_MS = 30000;
        const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
        const UPLOAD_COOLDOWN_MS = 2500;
        const VOTE_COOLDOWN_MS = 450;
-       const COMMENT_COOLDOWN_MS = 800;
        const SUPPORTED_IMAGE_TYPES = new Set([
            'image/jpeg',
            'image/jpg',
@@ -341,46 +334,6 @@
 
        function getDisplayNameKey() {
            return CURRENT_USER_ID ? `display_name_v1_${CURRENT_USER_ID}` : null;
-       }
-
-       function getLocalCommentsKey() {
-           return CURRENT_USER_ID ? `${LOCAL_COMMENTS_KEY_PREFIX}${CURRENT_USER_ID}` : null;
-       }
-
-       function loadLocalComments() {
-           const key = getLocalCommentsKey();
-           if (!key) {
-               localCommentsByCaption = {};
-               return;
-           }
-           try {
-               const raw = localStorage.getItem(key);
-               localCommentsByCaption = raw ? JSON.parse(raw) : {};
-           } catch (_err) {
-               localCommentsByCaption = {};
-           }
-       }
-
-       function saveLocalComments() {
-           const key = getLocalCommentsKey();
-           if (!key) return;
-           try {
-               localStorage.setItem(key, JSON.stringify(localCommentsByCaption));
-           } catch (_err) {}
-       }
-
-       function mergeLocalCommentsIntoFeed() {
-           Object.keys(localCommentsByCaption || {}).forEach(captionId => {
-               const localRows = Array.isArray(localCommentsByCaption[captionId]) ? localCommentsByCaption[captionId] : [];
-               if (!localRows.length) return;
-               if (!commentsByCaption[captionId]) commentsByCaption[captionId] = [];
-               const existingIds = new Set(commentsByCaption[captionId].map(c => String(c.id || '')));
-               localRows.forEach(row => {
-                   const rowId = String(row.id || '');
-                   if (rowId && existingIds.has(rowId)) return;
-                   commentsByCaption[captionId].unshift(row);
-               });
-           });
        }
 
        function getCurrentDisplayName() {
@@ -644,95 +597,6 @@
            return `<div class="ai-meta"><span class="ai-pill">AI</span><span class="ai-meta-text">${model}</span><span class="ai-meta-text">${generatedAt}</span><span class="ai-meta-text">${status}</span></div>`;
        }
 
-       function renderCommentsBlock(item) {
-           const captionId = item?.id;
-           if (!captionId) return '';
-           const comments = commentsByCaption[captionId] || [];
-           const modeHint = commentsDbAvailable ? '' : '<span class="comment-mode-hint">Local mode</span>';
-           const rows = comments.slice(0, 5).map(c => {
-               const label = escapeHtml(c.authorLabel || 'User');
-               const text = safePreviewText(c.content || '', 280);
-               const time = formatShortTime(c.created_datetime_utc || c.createdAt || new Date().toISOString());
-               return `<li class="comment-item"><span class="comment-author">${label}</span><span class="comment-text">${text}</span><span class="comment-time">${time}</span></li>`;
-           }).join('');
-           return `
-               <div class="comments-block" id="comments-${captionId}">
-                   <button class="comments-toggle" onclick="toggleComments('${captionId}')">
-                       <i class="fa-regular fa-comment"></i> Comments (${comments.length}) ${modeHint}
-                   </button>
-                   <div class="comments-panel hidden" id="comments-panel-${captionId}">
-                       <ul class="comment-list">${rows || '<li class="comment-empty">No comments yet.</li>'}</ul>
-                       <div class="comment-form">
-                           <input id="comment-input-${captionId}" class="comment-input" maxlength="280" placeholder="Add a comment...">
-                           <button class="logout-btn" onclick="submitComment('${captionId}')">Post</button>
-                       </div>
-                   </div>
-               </div>`;
-       }
-
-       function toggleComments(captionId) {
-           const panel = document.getElementById(`comments-panel-${captionId}`);
-           if (!panel) return;
-           panel.classList.toggle('hidden');
-       }
-
-       async function submitComment(captionId) {
-           if (!CURRENT_USER_ID) {
-               alert('Please sign in first.');
-               return;
-           }
-           const input = document.getElementById(`comment-input-${captionId}`);
-           if (!input) return;
-           const content = input.value.trim();
-           if (!content) return;
-           const key = `${CURRENT_USER_ID}:${captionId}`;
-           const nowMs = Date.now();
-           if (COMMENT_COOLDOWNS[key] && nowMs - COMMENT_COOLDOWNS[key] < COMMENT_COOLDOWN_MS) return;
-           COMMENT_COOLDOWNS[key] = nowMs;
-
-           const client = getClient();
-           const nowIso = new Date().toISOString();
-           const payload = {
-               caption_id: captionId,
-               profile_id: CURRENT_USER_ID,
-               content,
-               created_datetime_utc: nowIso
-           };
-           let inserted = null;
-           if (commentsDbAvailable) {
-               const { data, error } = await client.from('caption_comments').insert(payload).select('*').limit(1);
-               if (error) {
-                   const message = String(error.message || '');
-                   const lower = message.toLowerCase();
-                   const isMissingTable = lower.includes('does not exist') || lower.includes('relation') || lower.includes('not found');
-                   if (isMissingTable) {
-                       commentsDbAvailable = false;
-                       console.warn('[Comments] DB table unavailable; falling back to local comments');
-                   } else {
-                       alert(`Comment failed: ${message}`);
-                       return;
-                   }
-               } else {
-                   inserted = data && data[0] ? data[0] : payload;
-               }
-           }
-           if (!inserted) {
-               inserted = {
-                   ...payload,
-                   id: `local-comment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-               };
-               if (!localCommentsByCaption[captionId]) localCommentsByCaption[captionId] = [];
-               localCommentsByCaption[captionId].unshift(inserted);
-               localCommentsByCaption[captionId] = localCommentsByCaption[captionId].slice(0, 50);
-               saveLocalComments();
-           }
-           inserted.authorLabel = getCurrentDisplayName() || CURRENT_USER_EMAIL || 'You';
-           if (!commentsByCaption[captionId]) commentsByCaption[captionId] = [];
-           commentsByCaption[captionId] = [inserted, ...commentsByCaption[captionId]];
-           input.value = '';
-           renderCurrentView();
-       }
-
        function scheduleRealtimeRefresh() {
            if (REALTIME_REFRESH_TIMER) return;
            REALTIME_REFRESH_TIMER = setTimeout(() => {
@@ -748,7 +612,6 @@
                .channel('app-live-updates')
                .on('postgres_changes', { event: '*', schema: 'public', table: 'captions' }, scheduleRealtimeRefresh)
                .on('postgres_changes', { event: '*', schema: 'public', table: 'caption_votes' }, scheduleRealtimeRefresh)
-               .on('postgres_changes', { event: '*', schema: 'public', table: 'caption_comments' }, scheduleRealtimeRefresh)
                .subscribe();
        }
 
@@ -1211,33 +1074,6 @@
                    voteStats[captionId].total += myVal;
                });
 
-               commentsByCaption = {};
-               loadLocalComments();
-               const { data: allComments, error: commentsError } = await client
-                   .from('caption_comments')
-                   .select('*')
-                   .order('created_datetime_utc', { ascending: false })
-                   .limit(3000);
-               if (commentsError) {
-                   const m = String(commentsError.message || '').toLowerCase();
-                   const isSchemaProblem = m.includes('does not exist') || m.includes('permission denied') || m.includes('not found');
-                   if (isSchemaProblem) commentsDbAvailable = false;
-                   console.warn('[Comments] fetch error:', commentsError.message);
-               } else {
-                   commentsEnabled = true;
-                   commentsDbAvailable = true;
-                   (allComments || []).forEach(c => {
-                       const cid = c.caption_id;
-                       if (!cid) return;
-                       if (!commentsByCaption[cid]) commentsByCaption[cid] = [];
-                       const authorLabel = c.profile_id === CURRENT_USER_ID
-                           ? (getCurrentDisplayName() || CURRENT_USER_EMAIL || 'You')
-                           : `User ${String(c.profile_id || '').slice(0, 6)}`;
-                       commentsByCaption[cid].push({ ...c, authorLabel });
-                   });
-               }
-               mergeLocalCommentsIntoFeed();
-
                allMemes = captions.map(item => ({
                    ...item,
                    imageUrl: imageUrlById[item.image_id] || null
@@ -1339,7 +1175,6 @@
                        <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
                        ${renderUploaderMeta(item)}
-                       ${renderCommentsBlock(item)}
                        <div class="actions">
                            <div class="vote-controls">
                                <button class="vote-btn ${upActive} up-btn" onclick="handleVote('${item.id}', 1)">
@@ -1461,7 +1296,6 @@
                        <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
                        ${renderUploaderMeta(item)}
-                       ${renderCommentsBlock(item)}
 
                        <div class="actions">
                            <div class="vote-controls">
@@ -1527,7 +1361,6 @@
                        <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
                        ${renderUploaderMeta(item)}
-                       ${renderCommentsBlock(item)}
                        <div class="actions">
                            <div class="vote-controls">
                                <span class="vote-count">${stats.total}</span>
