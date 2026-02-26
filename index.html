@@ -82,6 +82,7 @@
        let communityUploadStatus = '';
        let communityByCaptionId = {};
        let communityByImageId = {};
+       let IS_PHONE_CLIENT = false;
        let UPLOAD_IN_FLIGHT = false;
        let LAST_UPLOAD_AT = 0;
        let VISIBILITY_HOOK_SET = false;
@@ -97,6 +98,7 @@
        const COMMUNITIES_KEY_PREFIX = 'communities_v1_';
        const COMMUNITY_MAP_KEY_PREFIX = 'community_map_v1_';
        const PIPELINE_BASE_URL = 'https://api.almostcrackd.ai';
+       const PHONE_MEDIA_QUERY = '(max-width: 900px)';
        const FEED_REFRESH_MS = 30000;
        const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
        const UPLOAD_COOLDOWN_MS = 2500;
@@ -376,6 +378,18 @@
            line.style.color = color;
            line.innerText = `> ${msg}`;
            content.prepend(line);
+       }
+
+       function detectPhoneClient() {
+           const ua = String(navigator.userAgent || '').toLowerCase();
+           const hasMobileUA = /iphone|ipod|android|mobile|ipad/.test(ua);
+           const narrow = window.matchMedia && window.matchMedia(PHONE_MEDIA_QUERY).matches;
+           return Boolean(hasMobileUA || narrow);
+       }
+
+       function applyClientMode() {
+           IS_PHONE_CLIENT = detectPhoneClient();
+           document.body.classList.toggle('iphone-mode', IS_PHONE_CLIENT);
        }
 
        function updateSideTabs() {
@@ -1234,6 +1248,7 @@
        }
       
        async function renderApp() {
+           applyClientMode();
            const container = document.getElementById('content-view');
            const searchBar = document.querySelector('.search-wrapper');
            const sidebar = document.getElementById('sidebar');
@@ -1914,6 +1929,9 @@
            if (value === 1 && upBtn) upBtn.classList.add('active', 'up');
            if (value === -1 && downBtn) downBtn.classList.add('active', 'down');
        }
+
+       window.addEventListener('resize', applyClientMode, { passive: true });
+       window.addEventListener('orientationchange', applyClientMode, { passive: true });
 
        renderApp()
    </script>
