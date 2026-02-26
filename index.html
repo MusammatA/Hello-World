@@ -34,6 +34,9 @@
          <i class="fa-solid fa-users"></i> Communities
       </button>
    </aside>
+   <button id="mobile-nav-toggle" class="mobile-nav-toggle" aria-label="Open menu" onclick="toggleMobileNav()">
+      <i class="fa-solid fa-bars"></i>
+   </button>
 
    <div class="container">
        <h1>Brain Rot Central</h1>
@@ -83,6 +86,7 @@
        let communityByCaptionId = {};
        let communityByImageId = {};
        let IS_PHONE_CLIENT = false;
+       let MOBILE_NAV_OPEN = false;
        let UPLOAD_IN_FLIGHT = false;
        let LAST_UPLOAD_AT = 0;
        let VISIBILITY_HOOK_SET = false;
@@ -390,6 +394,21 @@
        function applyClientMode() {
            IS_PHONE_CLIENT = detectPhoneClient();
            document.body.classList.toggle('iphone-mode', IS_PHONE_CLIENT);
+           if (!IS_PHONE_CLIENT) {
+               MOBILE_NAV_OPEN = false;
+               document.body.classList.remove('mobile-nav-open');
+           }
+       }
+
+       function toggleMobileNav() {
+           if (!IS_PHONE_CLIENT) return;
+           MOBILE_NAV_OPEN = !MOBILE_NAV_OPEN;
+           document.body.classList.toggle('mobile-nav-open', MOBILE_NAV_OPEN);
+       }
+
+       function closeMobileNav() {
+           MOBILE_NAV_OPEN = false;
+           document.body.classList.remove('mobile-nav-open');
        }
 
        function updateSideTabs() {
@@ -424,6 +443,7 @@
            updateSideTabs();
            updateTopControls();
            renderCurrentView();
+           if (IS_PHONE_CLIENT) closeMobileNav();
        }
 
        function draw() {
@@ -1264,7 +1284,8 @@
                loadCommunityState();
                await hydrateCommunitiesFromProfile(session.user);
                sidebar.style.display = 'flex';
-               document.body.classList.add('has-sidebar');
+               closeMobileNav();
+                document.body.classList.add('has-sidebar');
                startAutoRefresh();
                startRealtimeSync();
                await fetchAndShowMemes(client, container);
@@ -1276,7 +1297,8 @@
                stopRealtimeSync();
                searchBar.style.display = 'none';
                sidebar.style.display = 'none';
-               document.body.classList.remove('has-sidebar');
+               closeMobileNav();
+                document.body.classList.remove('has-sidebar');
                container.innerHTML = `
                    <div class="auth-box">
                        <div class="auth-kicker">SIGN IN</div>
@@ -1298,6 +1320,7 @@
                    loadCommunityState();
                    await hydrateCommunitiesFromProfile(currentSession.user);
                    sidebar.style.display = 'flex';
+                   closeMobileNav();
                    document.body.classList.add('has-sidebar');
                    startAutoRefresh();
                    startRealtimeSync();
@@ -1306,6 +1329,7 @@
                    CURRENT_ACCESS_TOKEN = null;
                    CURRENT_USER_EMAIL = '';
                    CURRENT_UPLOADER_NAME = '';
+                   closeMobileNav();
                    stopAutoRefresh();
                    stopRealtimeSync();
                }
