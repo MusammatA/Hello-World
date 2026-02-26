@@ -13,6 +13,13 @@
   --shadow: 0 14px 40px rgba(4, 2, 12, 0.45);
 }
 
+html {
+  min-height: 100%;
+  background-color: var(--bg);
+  overscroll-behavior-y: none;
+  overflow-y: auto;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -26,13 +33,11 @@ body {
     radial-gradient(1200px 520px at 10% -10%, rgba(255, 79, 179, 0.22), transparent 55%),
     radial-gradient(900px 420px at 110% 0%, rgba(255, 79, 179, 0.14), transparent 45%),
     linear-gradient(165deg, var(--bg) 0%, var(--bg-soft) 100%);
+  background-color: var(--bg);
   min-height: 100vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-}
-
-html {
-  overflow-y: auto;
+  overscroll-behavior-y: none;
 }
 
 .container {
