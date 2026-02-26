@@ -344,15 +344,12 @@
 
        function getUploaderKey(item) {
            if (!item) return '';
-           return item.uploaderUserId || item.uploaderEmail || item.uploaderName || `unknown-${item.id}`;
+           return item.uploaderEmail || item.uploaderUserId || `unknown-${item.id}`;
        }
 
        function getUploaderLabel(item) {
-           if (!item) return 'Unknown uploader';
-           if (item.uploaderName) return item.uploaderName;
            if (item.uploaderEmail) return item.uploaderEmail;
-           if (item.uploaderUserId) return `User ${item.uploaderUserId.slice(0, 8)}`;
-           return 'Unknown uploader';
+           return 'Email unavailable';
        }
 
        function getUploadsByUploader(searchTerm = '') {
@@ -805,7 +802,9 @@
 
        function clearUploaderSearch() {
            uploaderSearchTerm = '';
-           renderCurrentView();
+           const input = document.getElementById('uploader-search-input');
+           if (input) input.value = '';
+           renderUploaderDirectorySection();
        }
 
        function setupUploaderSearch() {
@@ -815,8 +814,48 @@
            oldInput.parentNode.replaceChild(newInput, oldInput);
            newInput.addEventListener('input', (e) => {
                uploaderSearchTerm = e.target.value.toLowerCase();
-               renderCurrentView();
+               renderUploaderDirectorySection();
            });
+       }
+
+       function renderUploaderDirectorySection() {
+           const uploaderGroups = getUploadsByUploader(uploaderSearchTerm);
+           const totalUploaderGroups = getUploadsByUploader('').length;
+           const countEl = document.getElementById('uploader-count-label');
+           const listEl = document.getElementById('uploader-directory-container');
+           if (!countEl || !listEl) return;
+
+           countEl.textContent = `Showing ${uploaderGroups.length} of ${totalUploaderGroups} uploaders`;
+           if (!uploaderGroups.length) {
+               listEl.innerHTML = `<p class="upload-empty">No users match that search.</p>`;
+               return;
+           }
+
+           let html = `<div class="uploader-directory">`;
+           uploaderGroups.forEach(group => {
+               const previews = group.items.slice(0, 4);
+               html += `
+                   <article class="uploader-card">
+                       <div class="uploader-card-head">
+                           <div class="uploader-card-title">${group.label}</div>
+                           <div class="uploader-card-meta">${group.totalCaptions} captions · ${group.totalImages} images</div>
+                       </div>
+                       <div class="uploader-preview-grid">`;
+               previews.forEach(item => {
+                   const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
+                   const displayUrl = item.imageUrl || fallbackGif;
+                   html += `
+                           <div class="uploader-preview-item">
+                               <img src="${displayUrl}" class="uploader-preview-image" alt="Uploader meme preview">
+                               <div class="uploader-preview-caption">${item.content || ''}</div>
+                           </div>`;
+               });
+               html += `
+                       </div>
+                   </article>`;
+           });
+           html += `</div>`;
+           listEl.innerHTML = html;
        }
       
        async function renderApp() {
@@ -1016,8 +1055,6 @@
 
        function renderAccountView(container) {
            const ownedUploads = getOwnedUploads();
-           const uploaderGroups = getUploadsByUploader(uploaderSearchTerm);
-           const totalUploaderGroups = getUploadsByUploader('').length;
            const displayName = getCurrentDisplayName();
            let html = `
                ${renderHeaderActions(false)}
@@ -1062,45 +1099,18 @@
                <section class="account-panel">
                    <h3 class="account-title">Find Other Uploaders</h3>
                    <div class="account-name-controls">
-                       <input id="uploader-search-input" class="account-name-input" placeholder="Search by name, email, or user id..." value="${uploaderSearchTerm}">
+                       <input id="uploader-search-input" class="account-name-input" placeholder="Search by Columbia email..." value="${uploaderSearchTerm}">
                        <button class="logout-btn" onclick="clearUploaderSearch()">
                            <i class="fa-solid fa-xmark"></i> Clear
                        </button>
                    </div>
-                   <div class="account-row">Showing ${uploaderGroups.length} of ${totalUploaderGroups} uploaders</div>`;
-
-           if (!uploaderGroups.length) {
-               html += `<p class="upload-empty">No users match that search.</p>`;
-           } else {
-               html += `<div class="uploader-directory">`;
-               uploaderGroups.forEach(group => {
-                   const previews = group.items.slice(0, 4);
-                   html += `
-                       <article class="uploader-card">
-                           <div class="uploader-card-head">
-                               <div class="uploader-card-title">${group.label}</div>
-                               <div class="uploader-card-meta">${group.totalCaptions} captions · ${group.totalImages} images</div>
-                           </div>
-                           <div class="uploader-preview-grid">`;
-                   previews.forEach(item => {
-                       const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
-                       const displayUrl = item.imageUrl || fallbackGif;
-                       html += `
-                               <div class="uploader-preview-item">
-                                   <img src="${displayUrl}" class="uploader-preview-image" alt="Uploader meme preview">
-                                   <div class="uploader-preview-caption">${item.content || ''}</div>
-                               </div>`;
-                   });
-                   html += `
-                           </div>
-                       </article>`;
-               });
-               html += `</div>`;
-           }
+                   <div class="account-row" id="uploader-count-label">Showing 0 of 0 uploaders</div>
+                   <div id="uploader-directory-container"></div>`;
 
            html += `</section>`;
            container.innerHTML = html;
            setupUploaderSearch();
+           renderUploaderDirectorySection();
        }
 
        function renderGrid(memes, container) {
