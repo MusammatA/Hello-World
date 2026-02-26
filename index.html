@@ -338,6 +338,35 @@
                return match ? match[1] : '';
            }
        }
+
+       function extractUploaderIdentity(item) {
+           const row = item || {};
+           const uploaderEmail = String(
+               row.uploader_email
+               || row.uploaderEmail
+               || row.uploaded_by_email
+               || row.created_by_email
+               || row.user_email
+               || ''
+           ).trim();
+           const uploaderName = String(
+               row.uploader_name
+               || row.uploaderName
+               || row.uploaded_by_name
+               || row.created_by_name
+               || ''
+           ).trim();
+           const uploaderUserId = String(
+               row.uploader_user_id
+               || row.uploaderUserId
+               || row.uploaded_by_user_id
+               || row.created_by_user_id
+               || row.profile_id
+               || row.user_id
+               || ''
+           ).trim();
+           return { uploaderEmail, uploaderName, uploaderUserId };
+       }
       
        function logMsg(msg, color = "#fff") {
            const box = document.getElementById('click-logger');
@@ -564,6 +593,10 @@
                    content: item.content || item.caption_text || '',
                    imageUrl: item.imageUrl || item.url || null
                };
+               const extractedIdentity = extractUploaderIdentity(normalized);
+               if (extractedIdentity.uploaderEmail && !normalized.uploaderEmail) normalized.uploaderEmail = extractedIdentity.uploaderEmail;
+               if (extractedIdentity.uploaderName && !normalized.uploaderName) normalized.uploaderName = extractedIdentity.uploaderName;
+               if (extractedIdentity.uploaderUserId && !normalized.uploaderUserId) normalized.uploaderUserId = extractedIdentity.uploaderUserId;
                if (!normalized.uploaderUserId) {
                    normalized.uploaderUserId = parseUploaderUserIdFromImageUrl(normalized.imageUrl);
                }
@@ -704,6 +737,7 @@
                image_id: item.image_id || imageId || null,
                uploaderName: item.uploaderName || CURRENT_UPLOADER_NAME || deriveUploaderNameFromEmail(CURRENT_USER_EMAIL),
                uploaderEmail: item.uploaderEmail || CURRENT_USER_EMAIL || '',
+               uploaderUserId: item.uploaderUserId || CURRENT_USER_ID || '',
                aiGenerated: true,
                aiModelTag: item.model || item.modelTag || 'caption-pipeline-v1',
                generatedAtUtc: item.generatedAtUtc || item.created_datetime_utc || generatedAtUtc,
@@ -711,9 +745,37 @@
             }));
         }
 
+       async function persistUploaderIdentityForImage(client, imageId) {
+           if (!client || !imageId || !CURRENT_USER_EMAIL) return;
+           const displayName = getCurrentDisplayName() || deriveUploaderNameFromEmail(CURRENT_USER_EMAIL);
+           const payloads = [
+               { uploader_email: CURRENT_USER_EMAIL, uploader_name: displayName, uploader_user_id: CURRENT_USER_ID },
+               { uploaded_by_email: CURRENT_USER_EMAIL, uploaded_by_name: displayName, uploaded_by_user_id: CURRENT_USER_ID },
+               { created_by_email: CURRENT_USER_EMAIL, created_by_name: displayName, created_by_user_id: CURRENT_USER_ID }
+           ];
+           for (const payload of payloads) {
+               const { error } = await client.from('captions').update(payload).eq('image_id', imageId);
+               if (!error) {
+                   console.log('[UploaderIdentity] Stored uploader identity for image', imageId);
+                   return;
+               }
+               const msg = String(error.message || '').toLowerCase();
+               const isMissingColumn = msg.includes('column') && msg.includes('does not exist');
+               if (!isMissingColumn) {
+                   console.warn('[UploaderIdentity] Could not persist identity', error.message);
+                   return;
+               }
+           }
+           console.warn('[UploaderIdentity] No compatible uploader identity columns found on captions table');
+       }
+
        function renderUploaderMeta(item) {
-           if (!item || !item.uploaderName) return '';
-           return `<div class="uploader-meta">Uploaded by ${escapeHtml(item.uploaderName)}</div>`;
+           if (!item) return '';
+           const email = String(item.uploaderEmail || '').trim();
+           if (email) return `<div class="uploader-meta">Uploaded by ${escapeHtml(email)}</div>`;
+           const name = String(item.uploaderName || '').trim();
+           if (name) return `<div class="uploader-meta">Uploaded by ${escapeHtml(name)}</div>`;
+           return '';
        }
 
        function renderCommunityMeta(item) {
@@ -906,6 +968,7 @@
                }
 
                // Verify DB persistence and refresh from DB so all users can see the same feed.
+               await persistUploaderIdentityForImage(client, imageId);
                const { data: persistedRows, error: persistedError } = await client
                    .from('captions')
                    .select('id')
@@ -1286,7 +1349,8 @@
 
                allMemes = captions.map(item => ({
                    ...item,
-                   imageUrl: imageUrlById[item.image_id] || null
+                   imageUrl: imageUrlById[item.image_id] || null,
+                   ...extractUploaderIdentity(item)
                }));
                allMemes = applyCommunityMetadata(dedupeMemes(allMemes));
 
