@@ -67,12 +67,17 @@
        let generatedMemes = [];
        let imageUrlById = {};
        let AUTO_REFRESH_TIMER = null;
+       let REALTIME_CHANNEL = null;
+       let REALTIME_REFRESH_TIMER = null;
        let ACCOUNT_ACTION_MESSAGE = '';
        let uploaderSearchTerm = '';
        let UPLOAD_IN_FLIGHT = false;
        let LAST_UPLOAD_AT = 0;
        let VISIBILITY_HOOK_SET = false;
        const VOTE_COOLDOWNS = {};
+       const COMMENT_COOLDOWNS = {};
+       let commentsByCaption = {};
+       let commentsEnabled = true;
        let GENERATION_UI_STATE = {
            status: 'idle',
            modelTag: 'caption-pipeline-v1',
@@ -86,6 +91,7 @@
        const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
        const UPLOAD_COOLDOWN_MS = 2500;
        const VOTE_COOLDOWN_MS = 450;
+       const COMMENT_COOLDOWN_MS = 800;
        const SUPPORTED_IMAGE_TYPES = new Set([
            'image/jpeg',
            'image/jpg',
@@ -593,6 +599,104 @@
            return `<div class="ai-meta"><span class="ai-pill">AI</span><span class="ai-meta-text">${model}</span><span class="ai-meta-text">${generatedAt}</span><span class="ai-meta-text">${status}</span></div>`;
        }
 
+       function renderCommentsBlock(item) {
+           const captionId = item?.id;
+           if (!captionId || !commentsEnabled) return '';
+           const comments = commentsByCaption[captionId] || [];
+           const rows = comments.slice(0, 5).map(c => {
+               const label = escapeHtml(c.authorLabel || 'User');
+               const text = safePreviewText(c.content || '', 280);
+               const time = formatShortTime(c.created_datetime_utc || c.createdAt || new Date().toISOString());
+               return `<li class="comment-item"><span class="comment-author">${label}</span><span class="comment-text">${text}</span><span class="comment-time">${time}</span></li>`;
+           }).join('');
+           return `
+               <div class="comments-block" id="comments-${captionId}">
+                   <button class="comments-toggle" onclick="toggleComments('${captionId}')">
+                       <i class="fa-regular fa-comment"></i> Comments (${comments.length})
+                   </button>
+                   <div class="comments-panel hidden" id="comments-panel-${captionId}">
+                       <ul class="comment-list">${rows || '<li class="comment-empty">No comments yet.</li>'}</ul>
+                       <div class="comment-form">
+                           <input id="comment-input-${captionId}" class="comment-input" maxlength="280" placeholder="Add a comment...">
+                           <button class="logout-btn" onclick="submitComment('${captionId}')">Post</button>
+                       </div>
+                   </div>
+               </div>`;
+       }
+
+       function toggleComments(captionId) {
+           const panel = document.getElementById(`comments-panel-${captionId}`);
+           if (!panel) return;
+           panel.classList.toggle('hidden');
+       }
+
+       async function submitComment(captionId) {
+           if (!CURRENT_USER_ID) {
+               alert('Please sign in first.');
+               return;
+           }
+           if (!commentsEnabled) return;
+           const input = document.getElementById(`comment-input-${captionId}`);
+           if (!input) return;
+           const content = input.value.trim();
+           if (!content) return;
+           const key = `${CURRENT_USER_ID}:${captionId}`;
+           const nowMs = Date.now();
+           if (COMMENT_COOLDOWNS[key] && nowMs - COMMENT_COOLDOWNS[key] < COMMENT_COOLDOWN_MS) return;
+           COMMENT_COOLDOWNS[key] = nowMs;
+
+           const client = getClient();
+           const nowIso = new Date().toISOString();
+           const payload = {
+               caption_id: captionId,
+               profile_id: CURRENT_USER_ID,
+               content,
+               created_datetime_utc: nowIso
+           };
+           const { data, error } = await client.from('caption_comments').insert(payload).select('*').limit(1);
+           if (error) {
+               alert(`Comment failed: ${error.message}`);
+               return;
+           }
+           const inserted = data && data[0] ? data[0] : payload;
+           inserted.authorLabel = getCurrentDisplayName() || CURRENT_USER_EMAIL || 'You';
+           if (!commentsByCaption[captionId]) commentsByCaption[captionId] = [];
+           commentsByCaption[captionId] = [inserted, ...commentsByCaption[captionId]];
+           input.value = '';
+           renderCurrentView();
+       }
+
+       function scheduleRealtimeRefresh() {
+           if (REALTIME_REFRESH_TIMER) return;
+           REALTIME_REFRESH_TIMER = setTimeout(() => {
+               REALTIME_REFRESH_TIMER = null;
+               refreshFeed(false).catch(err => console.error('[RealtimeRefresh]', err));
+           }, 1200);
+       }
+
+       function startRealtimeSync() {
+           const client = getClient();
+           stopRealtimeSync();
+           REALTIME_CHANNEL = client
+               .channel('app-live-updates')
+               .on('postgres_changes', { event: '*', schema: 'public', table: 'captions' }, scheduleRealtimeRefresh)
+               .on('postgres_changes', { event: '*', schema: 'public', table: 'caption_votes' }, scheduleRealtimeRefresh)
+               .on('postgres_changes', { event: '*', schema: 'public', table: 'caption_comments' }, scheduleRealtimeRefresh)
+               .subscribe();
+       }
+
+       function stopRealtimeSync() {
+           const client = getClient();
+           if (REALTIME_CHANNEL) {
+               client.removeChannel(REALTIME_CHANNEL);
+               REALTIME_CHANNEL = null;
+           }
+           if (REALTIME_REFRESH_TIMER) {
+               clearTimeout(REALTIME_REFRESH_TIMER);
+               REALTIME_REFRESH_TIMER = null;
+           }
+       }
+
        function extractGeneratedCaptions(step4Data) {
            if (Array.isArray(step4Data)) return step4Data;
            if (!step4Data || typeof step4Data !== 'object') return [];
@@ -942,12 +1046,14 @@
                sidebar.style.display = 'flex';
                document.body.classList.add('has-sidebar');
                startAutoRefresh();
+               startRealtimeSync();
                await fetchAndShowMemes(client, container);
            } else {
                CURRENT_ACCESS_TOKEN = null;
                CURRENT_USER_EMAIL = '';
                CURRENT_UPLOADER_NAME = '';
                stopAutoRefresh();
+               stopRealtimeSync();
                searchBar.style.display = 'none';
                sidebar.style.display = 'none';
                document.body.classList.remove('has-sidebar');
@@ -972,12 +1078,14 @@
                    sidebar.style.display = 'flex';
                    document.body.classList.add('has-sidebar');
                    startAutoRefresh();
+                   startRealtimeSync();
                    await fetchAndShowMemes(client, container);
                } else {
                    CURRENT_ACCESS_TOKEN = null;
                    CURRENT_USER_EMAIL = '';
                    CURRENT_UPLOADER_NAME = '';
                    stopAutoRefresh();
+                   stopRealtimeSync();
                }
            });
        }
@@ -1020,6 +1128,29 @@
                voteStats[captionId].myVote = myVal;
                voteStats[captionId].total += myVal;
            });
+
+           // Comments are optional: if table is absent or blocked, comments UI disables gracefully.
+           commentsByCaption = {};
+           commentsEnabled = true;
+           const { data: allComments, error: commentsError } = await client
+               .from('caption_comments')
+               .select('*')
+               .order('created_datetime_utc', { ascending: false })
+               .limit(3000);
+           if (commentsError) {
+               commentsEnabled = false;
+               console.warn('[Comments] Disabled due to fetch error:', commentsError.message);
+           } else {
+               (allComments || []).forEach(c => {
+                   const cid = c.caption_id;
+                   if (!cid) return;
+                   if (!commentsByCaption[cid]) commentsByCaption[cid] = [];
+                   const authorLabel = c.profile_id === CURRENT_USER_ID
+                       ? (getCurrentDisplayName() || CURRENT_USER_EMAIL || 'You')
+                       : `User ${String(c.profile_id || '').slice(0, 6)}`;
+                   commentsByCaption[cid].push({ ...c, authorLabel });
+               });
+           }
 
            allMemes = captions.map(item => ({
                ...item,
@@ -1104,6 +1235,7 @@
                        <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
                        ${renderUploaderMeta(item)}
+                       ${renderCommentsBlock(item)}
                        <div class="actions">
                            <div class="vote-controls">
                                <button class="vote-btn ${upActive} up-btn" onclick="handleVote('${item.id}', 1)">
@@ -1225,6 +1357,7 @@
                        <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
                        ${renderUploaderMeta(item)}
+                       ${renderCommentsBlock(item)}
 
                        <div class="actions">
                            <div class="vote-controls">
@@ -1290,6 +1423,7 @@
                        <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
                        ${renderUploaderMeta(item)}
+                       ${renderCommentsBlock(item)}
                        <div class="actions">
                            <div class="vote-controls">
                                <span class="vote-count">${stats.total}</span>
