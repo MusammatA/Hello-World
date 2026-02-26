@@ -870,28 +870,30 @@ body.iphone-mode .sidebar {
   bottom: calc(8px + env(safe-area-inset-bottom));
   width: auto;
   transform: none;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
   padding: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   background: rgba(18, 14, 30, 0.95);
   border-color: rgba(255, 140, 211, 0.25);
 }
 
 body.iphone-mode .sidebar-title {
-  grid-column: 1 / -1;
-  font-size: 0.78rem;
-  text-align: left;
-  margin: 0;
+  display: none;
 }
 
 body.iphone-mode .side-tab {
   min-height: 46px;
-  width: 100%;
-  font-size: 0.76rem;
+  min-width: 98px;
+  width: auto;
+  flex: 0 0 auto;
+  font-size: 0.72rem;
   line-height: 1.1;
-  padding: 8px 6px;
-  white-space: normal;
+  padding: 8px 10px;
+  white-space: nowrap;
 }
 
 body.iphone-mode #search-input,
