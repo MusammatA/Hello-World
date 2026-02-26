@@ -680,11 +680,14 @@ body.has-sidebar {
   background: #161226;
   color: #e9e4fb;
   border-radius: 4px;
-  padding: 10px 8px;
+  padding: 10px 10px;
   text-align: left;
   font-weight: 700;
   font-family: 'IBM Plex Mono', monospace;
   cursor: pointer;
+  min-height: 44px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(255, 79, 179, 0.22);
   transition: transform 160ms ease, background-color 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
 
@@ -803,25 +806,31 @@ body.has-sidebar {
     top: 10px;
     width: auto;
     transform: none;
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-start;
-    padding: 8px;
-    gap: 8px;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 10px;
+    gap: 10px;
+    overflow: visible;
     -webkit-overflow-scrolling: touch;
   }
 
   .sidebar-title {
     margin: 0;
-    flex: 0 0 auto;
+    grid-column: 1 / -1;
+    text-align: left;
+    font-size: 0.86rem;
   }
 
   .side-tab {
     text-align: center;
-    padding: 8px 10px;
-    flex: 0 0 auto;
-    white-space: nowrap;
+    padding: 10px 8px;
+    width: 100%;
+    min-height: 48px;
+    white-space: normal;
+    font-size: 0.84rem;
+    line-height: 1.15;
   }
 
   .account-name-input {
