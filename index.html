@@ -30,6 +30,9 @@
       <button id="tab-discover" class="side-tab" onclick="switchView('discover')">
          <i class="fa-solid fa-user-group"></i> Find Users
       </button>
+      <button id="tab-communities" class="side-tab" onclick="switchView('communities')">
+         <i class="fa-solid fa-users"></i> Communities
+      </button>
    </aside>
 
    <div class="container">
@@ -73,6 +76,12 @@
        let FEED_FETCH_QUEUED = false;
        let ACCOUNT_ACTION_MESSAGE = '';
        let uploaderSearchTerm = '';
+       let communities = ['General'];
+       let selectedCommunityName = 'General';
+       let communityCreateMessage = '';
+       let communityUploadStatus = '';
+       let communityByCaptionId = {};
+       let communityByImageId = {};
        let UPLOAD_IN_FLIGHT = false;
        let LAST_UPLOAD_AT = 0;
        let VISIBILITY_HOOK_SET = false;
@@ -85,6 +94,8 @@
        };
        const SWIPE_PROGRESS_KEY_PREFIX = 'swipe_progress_v1_';
        const GENERATED_MEMES_KEY_PREFIX = 'generated_memes_v1_';
+       const COMMUNITIES_KEY_PREFIX = 'communities_v1_';
+       const COMMUNITY_MAP_KEY_PREFIX = 'community_map_v1_';
        const PIPELINE_BASE_URL = 'https://api.almostcrackd.ai';
        const FEED_REFRESH_MS = 30000;
        const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -145,6 +156,84 @@
        function setCurrentUserIdentity(user) {
            CURRENT_USER_EMAIL = user?.email || '';
            CURRENT_UPLOADER_NAME = deriveUploaderNameFromEmail(CURRENT_USER_EMAIL);
+       }
+
+       function normalizeCommunityName(name) {
+           return String(name || '').replace(/\s+/g, ' ').trim().slice(0, 48);
+       }
+
+       function getCommunitiesKey() {
+           return CURRENT_USER_ID ? `${COMMUNITIES_KEY_PREFIX}${CURRENT_USER_ID}` : null;
+       }
+
+       function getCommunityMapKey() {
+           return CURRENT_USER_ID ? `${COMMUNITY_MAP_KEY_PREFIX}${CURRENT_USER_ID}` : null;
+       }
+
+       function saveCommunityState() {
+           const communitiesKey = getCommunitiesKey();
+           const mapKey = getCommunityMapKey();
+           if (!communitiesKey || !mapKey) return;
+           try {
+               localStorage.setItem(communitiesKey, JSON.stringify(Array.from(new Set(communities))));
+               localStorage.setItem(mapKey, JSON.stringify({
+                   byCaptionId: communityByCaptionId,
+                   byImageId: communityByImageId
+               }));
+           } catch (_err) {}
+       }
+
+       function ensureCommunityExists(name) {
+           const clean = normalizeCommunityName(name);
+           if (!clean) return 'General';
+           if (!communities.includes(clean)) {
+               communities = ['General', ...communities.filter(c => c !== 'General'), clean].filter((v, i, arr) => arr.indexOf(v) === i);
+           }
+           return clean;
+       }
+
+       function loadCommunityState() {
+           communities = ['General'];
+           communityByCaptionId = {};
+           communityByImageId = {};
+
+           const communitiesKey = getCommunitiesKey();
+           const mapKey = getCommunityMapKey();
+           if (!communitiesKey || !mapKey) return;
+           try {
+               const communitiesRaw = localStorage.getItem(communitiesKey);
+               if (communitiesRaw) {
+                   const parsed = JSON.parse(communitiesRaw);
+                   if (Array.isArray(parsed) && parsed.length) {
+                       communities = ['General', ...parsed.map(normalizeCommunityName).filter(Boolean)].filter((v, i, arr) => arr.indexOf(v) === i);
+                   }
+               }
+           } catch (_err) {}
+           try {
+               const mapRaw = localStorage.getItem(mapKey);
+               if (mapRaw) {
+                   const parsed = JSON.parse(mapRaw);
+                   communityByCaptionId = parsed?.byCaptionId && typeof parsed.byCaptionId === 'object' ? parsed.byCaptionId : {};
+                   communityByImageId = parsed?.byImageId && typeof parsed.byImageId === 'object' ? parsed.byImageId : {};
+               }
+           } catch (_err) {}
+
+           selectedCommunityName = ensureCommunityExists(selectedCommunityName || 'General');
+       }
+
+       function getMemeCommunity(item) {
+           if (!item) return 'General';
+           return item.communityName
+               || (item.id ? communityByCaptionId[item.id] : '')
+               || (item.image_id ? communityByImageId[item.image_id] : '')
+               || 'General';
+       }
+
+       function applyCommunityMetadata(memes) {
+           return (Array.isArray(memes) ? memes : []).map(item => ({
+               ...item,
+               communityName: getMemeCommunity(item)
+           }));
        }
 
        function formatShortTime(isoString) {
@@ -227,18 +316,20 @@
            const uploadBtn = document.getElementById('tab-upload');
            const accountBtn = document.getElementById('tab-account');
            const discoverBtn = document.getElementById('tab-discover');
-           if (!gridBtn || !swipeBtn || !uploadBtn || !accountBtn || !discoverBtn) return;
+           const communitiesBtn = document.getElementById('tab-communities');
+           if (!gridBtn || !swipeBtn || !uploadBtn || !accountBtn || !discoverBtn || !communitiesBtn) return;
            gridBtn.classList.toggle('active', currentView === 'grid');
            swipeBtn.classList.toggle('active', currentView === 'swipe');
            uploadBtn.classList.toggle('active', currentView === 'upload');
            accountBtn.classList.toggle('active', currentView === 'account');
            discoverBtn.classList.toggle('active', currentView === 'discover');
+           communitiesBtn.classList.toggle('active', currentView === 'communities');
        }
 
        function updateTopControls() {
            const searchBar = document.querySelector('.search-wrapper');
            if (!searchBar) return;
-           searchBar.style.display = (currentView === 'upload' || currentView === 'account' || currentView === 'discover') ? 'none' : 'block';
+           searchBar.style.display = (currentView === 'upload' || currentView === 'account' || currentView === 'discover' || currentView === 'communities') ? 'none' : 'block';
        }
 
        function getFilteredMemes() {
@@ -458,6 +549,7 @@
                if (normalized.aiGenerated && !normalized.generationStatus) {
                    normalized.generationStatus = 'ready';
                }
+               normalized.communityName = getMemeCommunity(normalized);
                byId.set(id, true);
                out.push(normalized);
            });
@@ -554,7 +646,7 @@
            status.classList.toggle('error', Boolean(isError));
        }
 
-       function normalizeGeneratedCaptions(captions, cdnUrl) {
+       function normalizeGeneratedCaptions(captions, cdnUrl, imageId = null) {
            const list = Array.isArray(captions) ? captions : [];
            const generatedAtUtc = new Date().toISOString();
            return list.map((item, index) => ({
@@ -562,6 +654,7 @@
                id: item.id || item.caption_id || `generated-${Date.now()}-${index}`,
                content: item.content || item.caption_text || '',
                imageUrl: cdnUrl,
+               image_id: item.image_id || imageId || null,
                uploaderName: item.uploaderName || CURRENT_UPLOADER_NAME || deriveUploaderNameFromEmail(CURRENT_USER_EMAIL),
                uploaderEmail: item.uploaderEmail || CURRENT_USER_EMAIL || '',
                aiGenerated: true,
@@ -574,6 +667,11 @@
        function renderUploaderMeta(item) {
            if (!item || !item.uploaderName) return '';
            return `<div class="uploader-meta">Uploaded by ${escapeHtml(item.uploaderName)}</div>`;
+       }
+
+       function renderCommunityMeta(item) {
+           const community = escapeHtml(getMemeCommunity(item));
+           return `<div class="community-meta"><span class="community-pill">${community}</span></div>`;
        }
 
        function renderHeaderActions(showRefresh = true) {
@@ -640,8 +738,9 @@
            return [];
        }
 
-       async function handleImageUpload(file) {
+       async function handleImageUpload(file, targetCommunity = null) {
            if (!file) return;
+           const communityName = ensureCommunityExists(targetCommunity || selectedCommunityName || 'General');
            const nowMs = Date.now();
            if (UPLOAD_IN_FLIGHT) {
                setUploadStatus('Upload already in progress. Please wait.', true);
@@ -740,17 +839,23 @@
 
                const generated = extractGeneratedCaptions(step4Data);
                console.log('[Pipeline Step 4] Captions extracted', { count: generated.length });
-               const newCaptions = normalizeGeneratedCaptions(generated, cdnUrl);
+               const newCaptions = normalizeGeneratedCaptions(generated, cdnUrl, imageId);
                newCaptions.forEach(item => {
                    item.aiModelTag = modelTag;
+                   item.communityName = communityName;
+                   if (item.id) communityByCaptionId[item.id] = communityName;
                });
+               if (imageId) communityByImageId[imageId] = communityName;
+               saveCommunityState();
                if (newCaptions.length) {
                    generatedMemes = dedupeMemes([...newCaptions, ...generatedMemes]);
                    saveGeneratedMemes();
-                   allMemes = dedupeMemes([...generatedMemes, ...allMemes]);
+                   allMemes = applyCommunityMetadata(dedupeMemes([...generatedMemes, ...allMemes]));
                    setUploadStatus(`New batch ready: ${newCaptions.length} caption(s).`);
+                   communityUploadStatus = `Uploaded to ${communityName}. ${newCaptions.length} caption(s) generated.`;
                } else {
                    setUploadStatus('Upload succeeded, but no captions were returned.');
+                   communityUploadStatus = `Upload reached ${communityName}, but no captions were returned.`;
                }
 
                // Verify DB persistence and refresh from DB so all users can see the same feed.
@@ -769,11 +874,12 @@
                swipeIndex = 0;
                swipeHistory = [];
                saveSwipeProgress();
-               switchView('upload');
+               switchView(targetCommunity ? 'communities' : 'upload');
            } catch (err) {
                console.error('[Pipeline] Upload flow failed', err);
                setGenerationUIState({ status: 'error', message: 'Generation failed' });
                setUploadStatus(err.message || 'Upload failed.', true);
+               if (targetCommunity) communityUploadStatus = err.message || 'Upload failed.';
            } finally {
                UPLOAD_IN_FLIGHT = false;
            }
@@ -789,6 +895,41 @@
                await handleImageUpload(file);
                newInput.value = '';
            });
+       }
+
+       function setupCommunityUploadInput() {
+           const oldInput = document.getElementById('community-image-upload');
+           if (!oldInput) return;
+           const newInput = oldInput.cloneNode(true);
+           oldInput.parentNode.replaceChild(newInput, oldInput);
+           newInput.addEventListener('change', async (e) => {
+               const file = e.target.files && e.target.files[0];
+               await handleImageUpload(file, selectedCommunityName);
+               newInput.value = '';
+           });
+       }
+
+       function handleCreateCommunity() {
+           const input = document.getElementById('community-title-input');
+           if (!input) return;
+           const name = normalizeCommunityName(input.value);
+           if (!name) {
+               communityCreateMessage = 'Community title is required.';
+               renderCurrentView();
+               return;
+           }
+           ensureCommunityExists(name);
+           selectedCommunityName = name;
+           communityCreateMessage = `Community "${name}" is ready.`;
+           input.value = '';
+           saveCommunityState();
+           renderCurrentView();
+       }
+
+       function handleCommunitySelection(value) {
+           selectedCommunityName = ensureCommunityExists(value || 'General');
+           saveCommunityState();
+           renderCurrentView();
        }
 
        async function refreshFeed(showNotice = false) {
@@ -859,6 +1000,11 @@
            const captionIds = allMemes
                .filter(item => item.image_id === imageId)
                .map(item => item.id);
+           captionIds.forEach(captionId => {
+               delete communityByCaptionId[captionId];
+           });
+           delete communityByImageId[imageId];
+           saveCommunityState();
            if (captionIds.length) {
                await client.from('caption_votes').delete().in('caption_id', captionIds);
            }
@@ -977,6 +1123,7 @@
                CURRENT_ACCESS_TOKEN = session.access_token || null;
                setCurrentUserIdentity(session.user);
                CURRENT_UPLOADER_NAME = getCurrentDisplayName();
+               loadCommunityState();
                sidebar.style.display = 'flex';
                document.body.classList.add('has-sidebar');
                startAutoRefresh();
@@ -1009,6 +1156,7 @@
                    CURRENT_ACCESS_TOKEN = currentSession.access_token || null;
                    setCurrentUserIdentity(currentSession.user);
                    CURRENT_UPLOADER_NAME = getCurrentDisplayName();
+                   loadCommunityState();
                    sidebar.style.display = 'flex';
                    document.body.classList.add('has-sidebar');
                    startAutoRefresh();
@@ -1078,10 +1226,11 @@
                    ...item,
                    imageUrl: imageUrlById[item.image_id] || null
                }));
-               allMemes = dedupeMemes(allMemes);
+               allMemes = applyCommunityMetadata(dedupeMemes(allMemes));
 
                restoreGeneratedMemes();
-               allMemes = dedupeMemes([...generatedMemes, ...allMemes]);
+               generatedMemes = applyCommunityMetadata(generatedMemes);
+               allMemes = applyCommunityMetadata(dedupeMemes([...generatedMemes, ...allMemes]));
 
                restoreSwipeProgress();
                updateSideTabs();
@@ -1119,6 +1268,10 @@
            }
            if (currentView === 'discover') {
                renderDiscoverView(container);
+               return;
+           }
+           if (currentView === 'communities') {
+               renderCommunitiesView(container);
                return;
            }
            const memes = getFilteredMemes();
@@ -1174,6 +1327,7 @@
                             onerror="this.onerror=null; this.src='${fallbackGif}';">
                        <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
+                       ${renderCommunityMeta(item)}
                        ${renderUploaderMeta(item)}
                        <div class="actions">
                            <div class="vote-controls">
@@ -1268,6 +1422,90 @@
            renderUploaderDirectorySection();
        }
 
+       function renderCommunitiesView(container) {
+           const communityOptions = communities
+               .map(name => `<option value="${escapeHtml(name)}" ${name === selectedCommunityName ? 'selected' : ''}>${escapeHtml(name)}</option>`)
+               .join('');
+           const scopedMemes = allMemes.filter(item => getMemeCommunity(item) === selectedCommunityName);
+
+           let html = `
+               ${renderHeaderActions(false)}
+               <section class="account-panel">
+                   <h3 class="account-title">Communities</h3>
+                   <div class="account-name-controls">
+                       <input id="community-title-input" class="account-name-input" placeholder="Community title (e.g. Campus Dogs)">
+                       <button class="logout-btn" id="create-community-btn">
+                           <i class="fa-solid fa-plus"></i> Create
+                       </button>
+                   </div>
+                   <div class="community-controls">
+                       <label for="community-select">Active community</label>
+                       <select id="community-select" class="account-name-input">${communityOptions}</select>
+                   </div>
+                   <div class="upload-wrapper">
+                       <label class="upload-label" for="community-image-upload">Upload to ${escapeHtml(selectedCommunityName)}</label>
+                       <input type="file" id="community-image-upload" accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,image/heic">
+                       <div class="upload-status">${escapeHtml(communityUploadStatus || '')}</div>
+                   </div>
+                   ${communityCreateMessage ? `<div class="account-message">${escapeHtml(communityCreateMessage)}</div>` : ''}
+               </section>
+               <section class="account-panel">
+                   <h3 class="account-title">${escapeHtml(selectedCommunityName)} Feed (${scopedMemes.length})</h3>`;
+
+           if (!scopedMemes.length) {
+               html += `<p class="upload-empty">No uploads in this community yet.</p>`;
+           } else {
+               html += '<ul>';
+               scopedMemes.slice(0, 60).forEach(item => {
+                   const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
+                   const displayUrl = safeUrl(item.imageUrl, fallbackGif);
+                   const safeContent = safePreviewText(item.content);
+                   const safeShortId = escapeHtml(String(item.id || '').substring(0, 4));
+                   const stats = voteStats[item.id] || { total: 0, myVote: 0 };
+                   const upActive = stats.myVote === 1 ? 'active up' : '';
+                   const downActive = stats.myVote === -1 ? 'active down' : '';
+
+                   html += `
+                       <li id="card-${item.id}">
+                           <img src="${displayUrl}" class="meme-image" alt="Meme"
+                                onerror="this.onerror=null; this.src='${fallbackGif}';">
+                           <div class="card-content">${safeContent}</div>
+                           ${renderAIMeta(item)}
+                           ${renderCommunityMeta(item)}
+                           ${renderUploaderMeta(item)}
+                           <div class="actions">
+                               <div class="vote-controls">
+                                   <button class="vote-btn ${upActive} up-btn" onclick="handleVote('${item.id}', 1)">
+                                       <i class="fa-solid fa-arrow-up"></i>
+                                   </button>
+                                   <span class="vote-count" id="count-${item.id}">${stats.total}</span>
+                                   <button class="vote-btn ${downActive} down-btn" onclick="handleVote('${item.id}', -1)">
+                                       <i class="fa-solid fa-arrow-down"></i>
+                                   </button>
+                               </div>
+                               <small style="color:#aaa;">ID: ${safeShortId}</small>
+                           </div>
+                       </li>`;
+               });
+               html += '</ul>';
+           }
+
+           html += '</section>';
+           container.innerHTML = html;
+
+           const createBtn = document.getElementById('create-community-btn');
+           const selectEl = document.getElementById('community-select');
+           const titleInput = document.getElementById('community-title-input');
+           if (createBtn) createBtn.addEventListener('click', handleCreateCommunity);
+           if (selectEl) selectEl.addEventListener('change', (e) => handleCommunitySelection(e.target.value));
+           if (titleInput) {
+               titleInput.addEventListener('keydown', (e) => {
+                   if (e.key === 'Enter') handleCreateCommunity();
+               });
+           }
+           setupCommunityUploadInput();
+       }
+
        function renderGrid(memes, container) {
            if (memes.length === 0) {
                container.innerHTML = `<p style="text-align:center;">No captions match your current filter.</p>`;
@@ -1295,6 +1533,7 @@
                       
                        <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
+                       ${renderCommunityMeta(item)}
                        ${renderUploaderMeta(item)}
 
                        <div class="actions">
@@ -1360,6 +1599,7 @@
                             onerror="this.onerror=null; this.src='${fallbackGif}';">
                        <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
+                       ${renderCommunityMeta(item)}
                        ${renderUploaderMeta(item)}
                        <div class="actions">
                            <div class="vote-controls">

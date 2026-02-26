@@ -503,6 +503,33 @@ li:hover::after {
   letter-spacing: 0.02em;
 }
 
+.community-meta {
+  padding: 0 18px 8px;
+}
+
+.community-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255, 79, 179, 0.34);
+  background: rgba(255, 79, 179, 0.12);
+  color: #ffd5ee;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+
+.community-controls {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 6px;
+}
+
+.community-controls label {
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+}
+
 .ai-meta {
   display: flex;
   align-items: center;
