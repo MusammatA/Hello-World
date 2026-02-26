@@ -195,6 +195,27 @@ p.subtitle {
   animation: statusPulse 1.3s ease-in-out infinite;
 }
 
+.upload-progress-track {
+  width: 100%;
+  height: 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(24, 20, 40, 0.9);
+  overflow: hidden;
+}
+
+.upload-progress-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand), var(--brand-2));
+  transition: width 220ms ease;
+}
+
+.upload-progress-text {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
 .upload-view-panel {
   max-width: 900px;
   margin: 0 auto 18px;

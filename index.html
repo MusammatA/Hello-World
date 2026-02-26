@@ -760,6 +760,14 @@
            communityUploadStatus = messageText;
        }
 
+       function setCreateProgress(percent, label = '') {
+           const p = Math.max(0, Math.min(100, Number(percent) || 0));
+           const fill = document.getElementById('upload-progress-fill');
+           const text = document.getElementById('upload-progress-text');
+           if (fill) fill.style.width = `${p}%`;
+           if (text) text.textContent = label ? `${p}% · ${label}` : `${p}%`;
+       }
+
        function normalizeGeneratedCaptions(captions, cdnUrl, imageId = null) {
            const list = Array.isArray(captions) ? captions : [];
            const generatedAtUtc = new Date().toISOString();
@@ -906,6 +914,7 @@
                UPLOAD_IN_FLIGHT = true;
                LAST_UPLOAD_AT = nowMs;
                const client = getClient();
+               setCreateProgress(5, 'Initializing');
                setGenerationUIState({
                    status: 'running',
                    message: 'Preparing upload',
@@ -915,6 +924,7 @@
                console.log('[Pipeline] Starting upload', { name: file.name, type: file.type, size: file.size });
                const token = await getAccessToken();
                setUploadStatus('Requesting an upload lane...');
+               setCreateProgress(20, 'Generating upload URL');
 
                console.log('[Pipeline Step 1] Generate presigned URL', { contentType: file.type });
                const step1Res = await fetchWithTimeout(`${PIPELINE_BASE_URL}/pipeline/generate-presigned-url`, {
@@ -930,6 +940,7 @@
                const presignedUrl = step1Data.presignedUrl;
                const cdnUrl = step1Data.cdnUrl;
                setGenerationUIState({ status: 'running', message: 'Uploading bytes' });
+               setCreateProgress(45, 'Uploading image');
                console.log('[Pipeline Step 1] Success', { presignedUrl, cdnUrl });
 
                setUploadStatus('Uploading pixels...');
@@ -943,6 +954,7 @@
                }, 40000, 'Step 2');
                if (!step2Res.ok) throw new Error(`Step 2 failed: ${step2Res.status}`);
                setGenerationUIState({ status: 'running', message: 'Registering image' });
+               setCreateProgress(65, 'Registering image');
                console.log('[Pipeline Step 2] Success');
 
                setUploadStatus('Registering your upload...');
@@ -962,6 +974,7 @@
                const step3Data = await step3Res.json();
                const imageId = step3Data.imageId;
                setGenerationUIState({ status: 'running', message: 'Generating captions' });
+               setCreateProgress(82, 'Generating captions');
                console.log('[Pipeline Step 3] Success', { imageId });
 
                setUploadStatus('Generating caption options...');
@@ -978,6 +991,7 @@
                const step4Data = await step4Res.json();
                const modelTag = extractModelTag(step4Data);
                setGenerationUIState({ status: 'ready', message: 'Captions ready', modelTag });
+               setCreateProgress(100, 'Complete');
                console.log('[Pipeline Step 4] Success', step4Data);
 
                const generated = extractGeneratedCaptions(step4Data);
@@ -1023,6 +1037,7 @@
                console.error('[Pipeline] Upload flow failed', err);
                setGenerationUIState({ status: 'error', message: 'Generation failed' });
                setUploadStatus(err.message || 'Upload failed.', true);
+               setCreateProgress(100, 'Failed');
                if (targetCommunity) communityUploadStatus = err.message || 'Upload failed.';
            } finally {
                UPLOAD_IN_FLIGHT = false;
@@ -1034,11 +1049,25 @@
            if (!oldInput) return;
            const newInput = oldInput.cloneNode(true);
            oldInput.parentNode.replaceChild(newInput, oldInput);
-           newInput.addEventListener('change', async (e) => {
+           newInput.addEventListener('change', (e) => {
                const file = e.target.files && e.target.files[0];
-               await handleImageUpload(file);
-               newInput.value = '';
+               if (!file) return;
+               setUploadStatus(`Ready to upload: ${file.name}`);
+               setCreateProgress(0, 'Ready');
            });
+       }
+
+       async function handleCreateUploadClick() {
+           const input = document.getElementById('image-upload');
+           if (!input) return;
+           const file = input.files && input.files[0];
+           if (!file) {
+               setUploadStatus('Select an image first.', true);
+               setCreateProgress(0, 'No file selected');
+               return;
+           }
+           await handleImageUpload(file);
+           input.value = '';
        }
 
        function setupCommunityUploadInput() {
@@ -1466,6 +1495,13 @@
                            id="image-upload"
                            accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,image/heic"
                        >
+                       <button class="logout-btn" id="create-upload-btn">
+                           <i class="fa-solid fa-cloud-arrow-up"></i> Upload Image
+                       </button>
+                       <div class="upload-progress-track" aria-hidden="true">
+                           <div id="upload-progress-fill" class="upload-progress-fill"></div>
+                       </div>
+                       <div id="upload-progress-text" class="upload-progress-text">0% · Waiting</div>
                        <div id="upload-status" class="upload-status"></div>
                    </div>
                </section>
@@ -1515,6 +1551,8 @@
            container.innerHTML = html;
            paintGenerationUIState();
            setupUpload();
+           const createUploadBtn = document.getElementById('create-upload-btn');
+           if (createUploadBtn) createUploadBtn.addEventListener('click', handleCreateUploadClick);
        }
 
        function renderAccountView(container) {
