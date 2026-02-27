@@ -1302,14 +1302,55 @@
            listEl.innerHTML = html;
        }
       
+       function renderSignedOut(container, searchBar, sidebar, message = '') {
+           CURRENT_ACCESS_TOKEN = null;
+           CURRENT_USER_EMAIL = '';
+           CURRENT_UPLOADER_NAME = '';
+           stopAutoRefresh();
+           stopRealtimeSync();
+           searchBar.style.display = 'none';
+           sidebar.style.display = 'none';
+           closeMobileNav();
+           document.body.classList.remove('has-sidebar');
+           container.innerHTML = `
+               <div class="auth-box">
+                   <div class="auth-kicker">SIGN IN</div>
+                   <h2>Brain Rot Central</h2>
+                   <p class="auth-subtext">Sign in with Google to vote, swipe, and generate new captions.</p>
+                   ${message ? `<p class="auth-subtext" style="color:#ffb4d9;">${escapeHtml(message)}</p>` : ''}
+                   <button class="login-btn" onclick="signIn()">
+                       <i class="fa-brands fa-google"></i> Sign in with Google
+                   </button>
+                   <div class="auth-meta">Callback route: /auth/callback</div>
+               </div>`;
+       }
+
        async function renderApp() {
            applyClientMode();
            const container = document.getElementById('content-view');
            const searchBar = document.querySelector('.search-wrapper');
            const sidebar = document.getElementById('sidebar');
            const client = getClient();
-          
-           const { data: { session } } = await client.auth.getSession();
+
+           let session = null;
+           try {
+               const first = await withTimeout(client.auth.getSession(), 9000, 'auth.getSession');
+               session = first?.data?.session || null;
+           } catch (sessionErr) {
+               const msg = String(sessionErr && sessionErr.message ? sessionErr.message : sessionErr);
+               console.warn('[Auth] getSession failed, retrying once:', msg);
+               try {
+                   await new Promise(resolve => setTimeout(resolve, 250));
+                   const second = await withTimeout(client.auth.getSession(), 9000, 'auth.getSession retry');
+                   session = second?.data?.session || null;
+               } catch (retryErr) {
+                   const retryMsg = String(retryErr && retryErr.message ? retryErr.message : retryErr);
+                   console.error('[Auth] getSession retry failed:', retryMsg);
+                   logMsg(`Auth session unavailable: ${retryMsg}`, 'red');
+                   renderSignedOut(container, searchBar, sidebar, 'Session check timed out. Please refresh and sign in again.');
+                   return;
+               }
+           }
           
            if (session) {
                CURRENT_USER_ID = session.user.id;
@@ -1325,25 +1366,7 @@
                startRealtimeSync();
                await fetchAndShowMemes(client, container);
            } else {
-               CURRENT_ACCESS_TOKEN = null;
-               CURRENT_USER_EMAIL = '';
-               CURRENT_UPLOADER_NAME = '';
-               stopAutoRefresh();
-               stopRealtimeSync();
-               searchBar.style.display = 'none';
-               sidebar.style.display = 'none';
-               closeMobileNav();
-                document.body.classList.remove('has-sidebar');
-               container.innerHTML = `
-                   <div class="auth-box">
-                       <div class="auth-kicker">SIGN IN</div>
-                       <h2>Brain Rot Central</h2>
-                       <p class="auth-subtext">Sign in with Google to vote, swipe, and generate new captions.</p>
-                       <button class="login-btn" onclick="signIn()">
-                           <i class="fa-brands fa-google"></i> Sign in with Google
-                       </button>
-                       <div class="auth-meta">Callback route: /auth/callback</div>
-                   </div>`;
+               renderSignedOut(container, searchBar, sidebar);
            }
 
            client.auth.onAuthStateChange(async (_event, currentSession) => {
@@ -2000,8 +2023,15 @@
 
        window.addEventListener('resize', applyClientMode, { passive: true });
        window.addEventListener('orientationchange', applyClientMode, { passive: true });
-
-       renderApp()
+       renderApp().catch((err) => {
+           const msg = String(err && err.message ? err.message : err);
+           console.error('[App] renderApp fatal:', msg);
+           const container = document.getElementById('content-view');
+           if (container) {
+               container.innerHTML = `<p style="text-align:center;color:#ffb4d9;">App failed to initialize: ${escapeHtml(msg)}</p>`;
+           }
+           logMsg(`App init failed: ${msg}`, 'red');
+       });
    </script>
 </body>
 </html>
