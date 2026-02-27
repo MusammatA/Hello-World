@@ -146,21 +146,10 @@
            return fallback;
        }
 
-       function isTrustedImageHost(url) {
-           try {
-               const host = new URL(String(url || '')).hostname.toLowerCase();
-               return host.endsWith('.almostcrackd.ai')
-                   || host === 'almostcrackd.ai'
-                   || host.endsWith('.supabase.co');
-           } catch (_err) {
-               return false;
-           }
-       }
-
        function isLikelyUnavailableMediaUrl(url) {
            const text = String(url || '').toLowerCase();
            if (!text) return true;
-            return text.includes('media.giphy.com')
+           return text.includes('media.giphy.com')
                || text.includes('giphy.gif')
                || text.includes('this-content-is-not-available')
                || text.includes('this-content-not-available');
@@ -180,17 +169,8 @@
                .filter(Boolean)
                .filter(value => value.startsWith('https://') || value.startsWith('http://'));
            if (!candidates.length) return '';
-           const preferred = candidates.find(url => isTrustedImageHost(url) && !isLikelyUnavailableMediaUrl(url))
-               || candidates.find(url => !isLikelyUnavailableMediaUrl(url));
+           const preferred = candidates.find(url => !isLikelyUnavailableMediaUrl(url));
            return preferred || candidates[0];
-       }
-
-       function getRenderableImageUrl(item) {
-           const raw = String(item?.imageUrl || item?.url || '').trim();
-           if (!raw) return MEME_FALLBACK_IMAGE;
-           if (isLikelyUnavailableMediaUrl(raw)) return MEME_FALLBACK_IMAGE;
-           if (!isTrustedImageHost(raw)) return MEME_FALLBACK_IMAGE;
-           return raw;
        }
 
        function toTitleCase(value) {
@@ -335,7 +315,7 @@
                const imageId = String(item?.image_id || '').trim();
                const mappedUrl = imageId ? imageUrlById[imageId] : '';
                const currentUrl = String(item?.imageUrl || item?.url || '').trim();
-               if (mappedUrl && (!currentUrl || isLikelyUnavailableMediaUrl(currentUrl) || !isTrustedImageHost(currentUrl))) {
+               if (mappedUrl && (!currentUrl || isLikelyUnavailableMediaUrl(currentUrl))) {
                    return { ...item, imageUrl: mappedUrl };
                }
                return item;
@@ -1349,7 +1329,7 @@
                        <div class="uploader-preview-grid">`;
                previews.forEach(item => {
                    const fallbackGif = MEME_FALLBACK_IMAGE;
-                   const displayUrl = safeUrl(getRenderableImageUrl(item), fallbackGif);
+                   const displayUrl = safeUrl(item.imageUrl, fallbackGif);
                    html += `
                            <div class="uploader-preview-item">
                                <img src="${displayUrl}" class="uploader-preview-image" alt="Uploader meme preview">
@@ -1614,7 +1594,7 @@
                html += '<ul>';
                generatedMemes.forEach(item => {
                    const fallbackGif = MEME_FALLBACK_IMAGE;
-                   const displayUrl = safeUrl(getRenderableImageUrl(item), fallbackGif);
+                   const displayUrl = safeUrl(item.imageUrl, fallbackGif);
                    const safeContent = safePreviewText(item.content);
                    const safeShortId = escapeHtml(String(item.id || '').substring(0, 4));
 
@@ -1686,7 +1666,7 @@
                html += `<div class="account-upload-list">`;
                ownedUploads.forEach(group => {
                    const preview = group.imageUrl || MEME_FALLBACK_IMAGE;
-                   const safePreview = safeUrl(getRenderableImageUrl({ imageUrl: preview }), MEME_FALLBACK_IMAGE);
+                   const safePreview = safeUrl(preview, preview);
                    const safeImageId = escapeHtml(group.imageId);
                    html += `
                        <article class="account-upload-item">
@@ -1768,7 +1748,7 @@
                html += '<ul>';
                scopedMemes.slice(0, 60).forEach(item => {
                    const fallbackGif = MEME_FALLBACK_IMAGE;
-                   const displayUrl = safeUrl(getRenderableImageUrl(item), fallbackGif);
+                   const displayUrl = safeUrl(item.imageUrl, fallbackGif);
                    const safeContent = safePreviewText(item.content);
                    const safeShortId = escapeHtml(String(item.id || '').substring(0, 4));
                    const stats = voteStats[item.id] || { total: 0, myVote: 0 };
@@ -1834,7 +1814,7 @@
           
            memes.forEach(item => {
                const fallbackGif = MEME_FALLBACK_IMAGE;
-               const displayUrl = safeUrl(getRenderableImageUrl(item), fallbackGif);
+               const displayUrl = safeUrl(item.imageUrl, fallbackGif);
                const safeContent = safePreviewText(item.content);
                const safeShortId = escapeHtml(String(item.id || '').substring(0, 4));
               
@@ -1897,7 +1877,7 @@
 
            const item = memes[swipeIndex];
            const fallbackGif = MEME_FALLBACK_IMAGE;
-           const displayUrl = safeUrl(getRenderableImageUrl(item), fallbackGif);
+           const displayUrl = safeUrl(item.imageUrl, fallbackGif);
            const safeContent = safePreviewText(item.content);
            const stats = voteStats[item.id] || { total: 0, myVote: 0 };
 
