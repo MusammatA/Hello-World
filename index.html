@@ -512,9 +512,7 @@
                const { data, error } = await client.from('images').select('id, url').in('id', batch);
                if (error) throw error;
                (data || []).forEach(img => {
-                   const key = String(img.id || '');
-                   if (!key) return;
-                   imageMap[key] = img.url;
+                   imageMap[img.id] = img.url;
                });
            }
            return imageMap;
@@ -1395,37 +1393,6 @@
 
                try {
                    imageUrlById = await fetchImagesByIds(client, captions.map(c => c.image_id));
-                   const missingImageIds = Array.from(new Set(
-                       captions
-                           .map(c => String(c.image_id || ''))
-                           .filter(id => id && !imageUrlById[id])
-                   ));
-                   if (missingImageIds.length) {
-                       // Retry focused fetch for ids that were still missing on first pass.
-                       const retryMap = await fetchImagesByIds(client, missingImageIds);
-                       imageUrlById = { ...imageUrlById, ...retryMap };
-                   }
-                   const stillMissing = Array.from(new Set(
-                       captions
-                           .map(c => String(c.image_id || ''))
-                           .filter(id => id && !imageUrlById[id])
-                   ));
-                   if (stillMissing.length) {
-                       // Final fallback: hydrate from a broad images snapshot.
-                       const { data: allImages, error: allImagesError } = await client
-                           .from('images')
-                           .select('id, url')
-                           .limit(50000);
-                       if (!allImagesError && allImages) {
-                           allImages.forEach(img => {
-                               const key = String(img.id || '');
-                               if (!key) return;
-                               if (!imageUrlById[key]) imageUrlById[key] = img.url;
-                           });
-                       } else if (allImagesError) {
-                           console.warn('[Images] fallback fetch failed:', allImagesError.message);
-                       }
-                   }
                } catch (error) {
                    logMsg("Error images: " + error.message, "red");
                    imageUrlById = {};
@@ -1456,7 +1423,7 @@
 
                allMemes = captions.map(item => ({
                    ...item,
-                   imageUrl: imageUrlById[String(item.image_id || '')] || item.imageUrl || item.url || null,
+                   imageUrl: imageUrlById[item.image_id] || null,
                    ...extractUploaderIdentity(item)
                }));
                allMemes = applyCommunityMetadata(dedupeMemes(allMemes));
