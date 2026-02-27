@@ -40,6 +40,18 @@ body {
   overscroll-behavior-y: auto;
 }
 
+body.desktop-mode,
+body.desktop-mode.has-sidebar {
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  overscroll-behavior-y: auto !important;
+  min-height: 100vh;
+}
+
+body.desktop-mode .container {
+  overflow: visible;
+}
+
 .container {
   max-width: 1180px;
   margin: 0 auto;

@@ -388,13 +388,13 @@
        function detectPhoneClient() {
            const ua = String(navigator.userAgent || '').toLowerCase();
            const hasMobileUA = /iphone|ipod|android|mobile|ipad/.test(ua);
-           const narrow = window.matchMedia && window.matchMedia(PHONE_MEDIA_QUERY).matches;
-           return Boolean(hasMobileUA || narrow);
+           return Boolean(hasMobileUA);
        }
 
        function applyClientMode() {
            IS_PHONE_CLIENT = detectPhoneClient();
            document.body.classList.toggle('iphone-mode', IS_PHONE_CLIENT);
+           document.body.classList.toggle('desktop-mode', !IS_PHONE_CLIENT);
            if (!IS_PHONE_CLIENT) {
                MOBILE_NAV_OPEN = false;
                document.body.classList.remove('mobile-nav-open');
