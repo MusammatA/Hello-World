@@ -146,6 +146,33 @@
            return fallback;
        }
 
+       function isLikelyUnavailableMediaUrl(url) {
+           const text = String(url || '').toLowerCase();
+           if (!text) return true;
+           return text.includes('media.giphy.com')
+               || text.includes('giphy.gif')
+               || text.includes('this-content-is-not-available')
+               || text.includes('this-content-not-available');
+       }
+
+       function pickBestImageUrl(record) {
+           if (!record || typeof record !== 'object') return '';
+           const orderedKeys = [
+               'cdn_url',
+               'public_url',
+               'storage_url',
+               'image_url',
+               'url'
+           ];
+           const candidates = orderedKeys
+               .map(key => String(record[key] || '').trim())
+               .filter(Boolean)
+               .filter(value => value.startsWith('https://') || value.startsWith('http://'));
+           if (!candidates.length) return '';
+           const preferred = candidates.find(url => !isLikelyUnavailableMediaUrl(url));
+           return preferred || candidates[0];
+       }
+
        function toTitleCase(value) {
            return String(value || '')
                .split(' ')
@@ -281,6 +308,18 @@
                ...item,
                communityName: getMemeCommunity(item)
            }));
+       }
+
+       function hydrateImageUrlsFromMap(memes) {
+           return (Array.isArray(memes) ? memes : []).map(item => {
+               const imageId = String(item?.image_id || '').trim();
+               const mappedUrl = imageId ? imageUrlById[imageId] : '';
+               const currentUrl = String(item?.imageUrl || item?.url || '').trim();
+               if (mappedUrl && (!currentUrl || isLikelyUnavailableMediaUrl(currentUrl))) {
+                   return { ...item, imageUrl: mappedUrl };
+               }
+               return item;
+           });
        }
 
        function formatShortTime(isoString) {
@@ -510,12 +549,12 @@
            const chunks = chunkArray(uniqueIds, 150);
            for (const batch of chunks) {
                if (!batch.length) continue;
-               const { data, error } = await client.from('images').select('id, url').in('id', batch);
+               const { data, error } = await client.from('images').select('*').in('id', batch);
                if (error) throw error;
                (data || []).forEach(img => {
                    const key = String(img.id || '').trim();
                    if (!key) return;
-                   imageMap[key] = img.url;
+                   imageMap[key] = pickBestImageUrl(img);
                });
            }
            return imageMap;
@@ -1415,13 +1454,13 @@
                        // Final fallback: hydrate from a broad images snapshot.
                        const { data: allImages, error: allImagesError } = await client
                            .from('images')
-                           .select('id, url')
+                           .select('*')
                            .limit(50000);
                        if (!allImagesError && allImages) {
                            allImages.forEach(img => {
                                const key = String(img.id || '').trim();
                                if (!key) return;
-                               if (!imageUrlById[key]) imageUrlById[key] = img.url;
+                               if (!imageUrlById[key]) imageUrlById[key] = pickBestImageUrl(img);
                            });
                        } else if (allImagesError) {
                            console.warn('[Images] fallback fetch failed:', allImagesError.message);
@@ -1463,6 +1502,7 @@
                allMemes = applyCommunityMetadata(dedupeMemes(allMemes));
 
                restoreGeneratedMemes();
+               generatedMemes = hydrateImageUrlsFromMap(generatedMemes);
                generatedMemes = applyCommunityMetadata(generatedMemes);
                allMemes = applyCommunityMetadata(dedupeMemes([...generatedMemes, ...allMemes]));
 
