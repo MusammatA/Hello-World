@@ -116,6 +116,7 @@
            'image/gif',
            'image/heic'
        ]);
+       const MEME_FALLBACK_IMAGE = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 720'%3E%3Crect width='960' height='720' fill='%23120f20'/%3E%3Ctext x='50%25' y='46%25' dominant-baseline='middle' text-anchor='middle' fill='%23c9c2e7' font-family='monospace' font-size='36'%3EImage Unavailable%3C/text%3E%3Ctext x='50%25' y='56%25' dominant-baseline='middle' text-anchor='middle' fill='%23877fb1' font-family='monospace' font-size='20'%3EUsing fallback preview%3C/text%3E%3C/svg%3E";
 
        function getClient() {
            if (!supabaseClient) {
@@ -505,14 +506,14 @@
 
        async function fetchImagesByIds(client, ids) {
            const imageMap = {};
-           const uniqueIds = Array.from(new Set((ids || []).filter(Boolean)));
+           const uniqueIds = Array.from(new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean)));
            const chunks = chunkArray(uniqueIds, 150);
            for (const batch of chunks) {
                if (!batch.length) continue;
                const { data, error } = await client.from('images').select('id, url').in('id', batch);
                if (error) throw error;
                (data || []).forEach(img => {
-                   const key = String(img.id || '');
+                   const key = String(img.id || '').trim();
                    if (!key) return;
                    imageMap[key] = img.url;
                });
@@ -1288,7 +1289,7 @@
                        </div>
                        <div class="uploader-preview-grid">`;
                previews.forEach(item => {
-                   const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
+                   const fallbackGif = MEME_FALLBACK_IMAGE;
                    const displayUrl = safeUrl(item.imageUrl, fallbackGif);
                    html += `
                            <div class="uploader-preview-item">
@@ -1397,7 +1398,7 @@
                    imageUrlById = await fetchImagesByIds(client, captions.map(c => c.image_id));
                    const missingImageIds = Array.from(new Set(
                        captions
-                           .map(c => String(c.image_id || ''))
+                           .map(c => String(c.image_id || '').trim())
                            .filter(id => id && !imageUrlById[id])
                    ));
                    if (missingImageIds.length) {
@@ -1407,7 +1408,7 @@
                    }
                    const stillMissing = Array.from(new Set(
                        captions
-                           .map(c => String(c.image_id || ''))
+                           .map(c => String(c.image_id || '').trim())
                            .filter(id => id && !imageUrlById[id])
                    ));
                    if (stillMissing.length) {
@@ -1418,7 +1419,7 @@
                            .limit(50000);
                        if (!allImagesError && allImages) {
                            allImages.forEach(img => {
-                               const key = String(img.id || '');
+                               const key = String(img.id || '').trim();
                                if (!key) return;
                                if (!imageUrlById[key]) imageUrlById[key] = img.url;
                            });
@@ -1456,7 +1457,7 @@
 
                allMemes = captions.map(item => ({
                    ...item,
-                   imageUrl: imageUrlById[String(item.image_id || '')] || item.imageUrl || item.url || null,
+                   imageUrl: imageUrlById[String(item.image_id || '').trim()] || item.imageUrl || item.url || null,
                    ...extractUploaderIdentity(item)
                }));
                allMemes = applyCommunityMetadata(dedupeMemes(allMemes));
@@ -1552,7 +1553,7 @@
            } else {
                html += '<ul>';
                generatedMemes.forEach(item => {
-                   const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
+                   const fallbackGif = MEME_FALLBACK_IMAGE;
                    const displayUrl = safeUrl(item.imageUrl, fallbackGif);
                    const safeContent = safePreviewText(item.content);
                    const safeShortId = escapeHtml(String(item.id || '').substring(0, 4));
@@ -1624,7 +1625,7 @@
            } else {
                html += `<div class="account-upload-list">`;
                ownedUploads.forEach(group => {
-                   const preview = group.imageUrl || "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
+                   const preview = group.imageUrl || MEME_FALLBACK_IMAGE;
                    const safePreview = safeUrl(preview, preview);
                    const safeImageId = escapeHtml(group.imageId);
                    html += `
@@ -1706,7 +1707,7 @@
            } else {
                html += '<ul>';
                scopedMemes.slice(0, 60).forEach(item => {
-                   const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
+                   const fallbackGif = MEME_FALLBACK_IMAGE;
                    const displayUrl = safeUrl(item.imageUrl, fallbackGif);
                    const safeContent = safePreviewText(item.content);
                    const safeShortId = escapeHtml(String(item.id || '').substring(0, 4));
@@ -1772,7 +1773,7 @@
                <ul>`;
           
            memes.forEach(item => {
-               const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
+               const fallbackGif = MEME_FALLBACK_IMAGE;
                const displayUrl = safeUrl(item.imageUrl, fallbackGif);
                const safeContent = safePreviewText(item.content);
                const safeShortId = escapeHtml(String(item.id || '').substring(0, 4));
@@ -1835,7 +1836,7 @@
            }
 
            const item = memes[swipeIndex];
-           const fallbackGif = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif";
+           const fallbackGif = MEME_FALLBACK_IMAGE;
            const displayUrl = safeUrl(item.imageUrl, fallbackGif);
            const safeContent = safePreviewText(item.content);
            const stats = voteStats[item.id] || { total: 0, myVote: 0 };
