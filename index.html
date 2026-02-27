@@ -524,7 +524,8 @@
            const chunks = chunkArray(uniqueIds, 150);
            for (const batch of chunks) {
                if (!batch.length) continue;
-               const { data, error } = await client.from('images').select('id, url, cdn_url, public_url, image_url').in('id', batch);
+               // Use select(*) to avoid hard dependency on specific optional columns.
+               const { data, error } = await client.from('images').select('*').in('id', batch);
                if (error) throw error;
                (data || []).forEach(img => {
                    const key = normalizeImageId(img.id);
