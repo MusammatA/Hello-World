@@ -16,7 +16,6 @@
 html {
   min-height: 100%;
   background-color: var(--bg);
-  overscroll-behavior-y: contain;
   overflow-y: auto;
 }
 
@@ -37,7 +36,6 @@ body {
   min-height: 100vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior-y: contain;
 }
 
 .container {
@@ -909,6 +907,7 @@ body.iphone-mode.has-sidebar {
   padding-bottom: 16px;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
   touch-action: pan-y;
 }
 
