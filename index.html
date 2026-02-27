@@ -448,7 +448,8 @@
        function detectPhoneClient() {
            const ua = String(navigator.userAgent || '').toLowerCase();
            const hasMobileUA = /iphone|ipod|android|mobile|ipad/.test(ua);
-           return Boolean(hasMobileUA);
+           const narrow = window.matchMedia && window.matchMedia(PHONE_MEDIA_QUERY).matches;
+           return Boolean(hasMobileUA || narrow);
        }
 
        function applyClientMode() {
