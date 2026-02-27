@@ -180,7 +180,8 @@
                .filter(Boolean)
                .filter(value => value.startsWith('https://') || value.startsWith('http://'));
            if (!candidates.length) return '';
-           const preferred = candidates.find(url => !isLikelyUnavailableMediaUrl(url));
+           const preferred = candidates.find(url => isTrustedImageHost(url) && !isLikelyUnavailableMediaUrl(url))
+               || candidates.find(url => !isLikelyUnavailableMediaUrl(url));
            return preferred || candidates[0];
        }
 
@@ -188,7 +189,8 @@
            const raw = String(item?.imageUrl || item?.url || '').trim();
            if (!raw) return MEME_FALLBACK_IMAGE;
            if (isLikelyUnavailableMediaUrl(raw)) return MEME_FALLBACK_IMAGE;
-            return raw;
+           if (!isTrustedImageHost(raw)) return MEME_FALLBACK_IMAGE;
+           return raw;
        }
 
        function toTitleCase(value) {
@@ -333,7 +335,7 @@
                const imageId = String(item?.image_id || '').trim();
                const mappedUrl = imageId ? imageUrlById[imageId] : '';
                const currentUrl = String(item?.imageUrl || item?.url || '').trim();
-               if (mappedUrl && (!currentUrl || isLikelyUnavailableMediaUrl(currentUrl))) {
+               if (mappedUrl && (!currentUrl || isLikelyUnavailableMediaUrl(currentUrl) || !isTrustedImageHost(currentUrl))) {
                    return { ...item, imageUrl: mappedUrl };
                }
                return item;
