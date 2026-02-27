@@ -450,8 +450,29 @@
        }
 
        function getFilteredMemes() {
-           if (!currentSearchTerm) return allMemes;
-           return allMemes.filter(m => m.content && m.content.toLowerCase().includes(currentSearchTerm));
+           const base = currentSearchTerm
+               ? allMemes.filter(m => m.content && m.content.toLowerCase().includes(currentSearchTerm))
+               : allMemes.slice();
+           return sortMemesByImageAvailability(base);
+       }
+
+       function hasLikelyMissingImage(item) {
+           const raw = String(item?.imageUrl || '').trim().toLowerCase();
+           if (!raw) return true;
+           if (raw.includes('this-content-is-not-available')) return true;
+           if (raw.includes('/content_not_available')) return true;
+           if (raw.includes('content-is-not-available')) return true;
+           return false;
+       }
+
+       function sortMemesByImageAvailability(memes) {
+           return (Array.isArray(memes) ? memes : [])
+               .map((item, idx) => ({ item, idx, missing: hasLikelyMissingImage(item) }))
+               .sort((a, b) => {
+                   if (a.missing === b.missing) return a.idx - b.idx;
+                   return a.missing ? 1 : -1;
+               })
+               .map(entry => entry.item);
        }
 
        function switchView(view) {
