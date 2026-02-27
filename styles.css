@@ -46,6 +46,7 @@ body.desktop-mode.has-sidebar {
   overflow-x: hidden;
   overscroll-behavior-y: auto !important;
   min-height: 100vh;
+  padding-left: 20px;
 }
 
 body.desktop-mode .container {
@@ -762,6 +763,18 @@ body.has-sidebar {
   align-items: center;
   justify-content: center;
   touch-action: manipulation;
+}
+
+body.desktop-mode.has-sidebar .mobile-nav-toggle {
+  display: inline-flex;
+}
+
+body.desktop-mode .sidebar {
+  display: none !important;
+}
+
+body.desktop-mode.mobile-nav-open .sidebar {
+  display: flex !important;
 }
 
 .swipe-panel {

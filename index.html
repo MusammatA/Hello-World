@@ -142,7 +142,26 @@
            const candidate = String(url || '').trim();
            if (!candidate) return fallback;
            if (candidate.startsWith('https://') || candidate.startsWith('http://')) return candidate;
+           if (candidate.startsWith('//')) return `https:${candidate}`;
            return fallback;
+       }
+
+       function normalizeImageId(value) {
+           return String(value || '').trim().toLowerCase();
+       }
+
+       function pickImageUrl(record = {}) {
+           const candidates = [
+               record.cdn_url,
+               record.public_url,
+               record.image_url,
+               record.url
+           ];
+           for (const candidate of candidates) {
+               const clean = String(candidate || '').trim();
+               if (clean && /^(https?:)?\/\//i.test(clean)) return clean;
+           }
+           return null;
        }
 
        function toTitleCase(value) {
@@ -395,14 +414,10 @@
            IS_PHONE_CLIENT = detectPhoneClient();
            document.body.classList.toggle('iphone-mode', IS_PHONE_CLIENT);
            document.body.classList.toggle('desktop-mode', !IS_PHONE_CLIENT);
-           if (!IS_PHONE_CLIENT) {
-               MOBILE_NAV_OPEN = false;
-               document.body.classList.remove('mobile-nav-open');
-           }
+           document.body.classList.toggle('mobile-nav-open', MOBILE_NAV_OPEN);
        }
 
        function toggleMobileNav() {
-           if (!IS_PHONE_CLIENT) return;
            MOBILE_NAV_OPEN = !MOBILE_NAV_OPEN;
            document.body.classList.toggle('mobile-nav-open', MOBILE_NAV_OPEN);
        }
@@ -505,14 +520,16 @@
 
        async function fetchImagesByIds(client, ids) {
            const imageMap = {};
-           const uniqueIds = Array.from(new Set((ids || []).filter(Boolean)));
+           const uniqueIds = Array.from(new Set((ids || []).map(normalizeImageId).filter(Boolean)));
            const chunks = chunkArray(uniqueIds, 150);
            for (const batch of chunks) {
                if (!batch.length) continue;
-               const { data, error } = await client.from('images').select('id, url').in('id', batch);
+               const { data, error } = await client.from('images').select('id, url, cdn_url, public_url, image_url').in('id', batch);
                if (error) throw error;
                (data || []).forEach(img => {
-                   imageMap[img.id] = img.url;
+                   const key = normalizeImageId(img.id);
+                   const picked = pickImageUrl(img);
+                   if (key && picked) imageMap[key] = picked;
                });
            }
            return imageMap;
@@ -1446,7 +1463,7 @@
 
                allMemes = captions.map(item => ({
                    ...item,
-                   imageUrl: imageUrlById[item.image_id] || null,
+                   imageUrl: imageUrlById[normalizeImageId(item.image_id)] || item.image_url || item.cdn_url || item.public_url || item.url || null,
                    ...extractUploaderIdentity(item)
                }));
                allMemes = applyCommunityMetadata(dedupeMemes(allMemes));
