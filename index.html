@@ -673,7 +673,11 @@
 
        async function fetchImagesByIds(client, ids) {
            const imageMap = {};
-           const uniqueIds = Array.from(new Set((ids || []).map(normalizeImageId).filter(Boolean)));
+           const uniqueIds = Array.from(new Set(
+               (ids || [])
+                   .map(id => String(id || '').trim())
+                   .filter(Boolean)
+           ));
            const chunks = chunkArray(uniqueIds, 150);
            for (const batch of chunks) {
                if (!batch.length) continue;
@@ -681,9 +685,12 @@
                const { data, error } = await client.from('images').select('*').in('id', batch);
                if (error) throw error;
                (data || []).forEach(img => {
-                   const key = normalizeImageId(img.id);
+                   const rawKey = String(img.id || '').trim();
+                   const key = normalizeImageId(rawKey);
                    const picked = pickImageUrl(img);
-                   if (key && picked) imageMap[key] = picked;
+                   if (!picked) return;
+                   if (rawKey) imageMap[rawKey] = picked;
+                   if (key) imageMap[key] = picked;
                });
            }
            return imageMap;
@@ -1694,8 +1701,8 @@
 
                allMemes = captions.map(item => ({
                    ...item,
-                   imageUrl: imageUrlById[normalizeImageId(item.image_id)] || item.image_url || item.cdn_url || item.public_url || item.url || null,
-                   imageUnavailable: [item.id, item.image_id, imageUrlById[normalizeImageId(item.image_id)] || item.image_url || item.cdn_url || item.public_url || item.url || null]
+                   imageUrl: imageUrlById[String(item.image_id || '').trim()] || imageUrlById[normalizeImageId(item.image_id)] || item.image_url || item.cdn_url || item.public_url || item.url || null,
+                   imageUnavailable: [item.id, item.image_id, imageUrlById[String(item.image_id || '').trim()] || imageUrlById[normalizeImageId(item.image_id)] || item.image_url || item.cdn_url || item.public_url || item.url || null]
                        .map(normalizeImageId)
                        .filter(Boolean)
                        .some((key) => BROKEN_IMAGE_KEYS.has(key)),

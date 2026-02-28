@@ -584,9 +584,14 @@ p.subtitle {
   font-family: 'IBM Plex Mono', monospace;
   outline: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  background: rgba(24, 20, 40, 0.94);
-  color: var(--ink);
+  background: #1a1530;
+  color: #f7f4ff;
+  caret-color: #f7f4ff;
   box-shadow: var(--shadow);
+}
+
+#search-input::placeholder {
+  color: rgba(238, 230, 255, 0.72);
 }
 
 #search-input:focus {
