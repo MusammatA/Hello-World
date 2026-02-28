@@ -113,6 +113,9 @@
        let VISIBILITY_HOOK_SET = false;
        let BROKEN_IMAGE_KEYS = new Set();
        let BROKEN_IMAGE_REORDER_TIMER = null;
+       let SERVER_SEARCH_RESULTS = null;
+       let SEARCH_REQUEST_SEQ = 0;
+       let SEARCH_DEBOUNCE_TIMER = null;
        const VOTE_COOLDOWNS = {};
        let GENERATION_UI_STATE = {
            status: 'idle',
@@ -531,11 +534,44 @@
        }
 
        function getFilteredMemes() {
-           const base = currentSearchTerm
-               ? allMemes.filter(m => getCaptionText(m).toLowerCase().includes(currentSearchTerm))
-               : allMemes.slice();
+           const hasServerSearch = currentSearchTerm && Array.isArray(SERVER_SEARCH_RESULTS);
+           const base = hasServerSearch
+               ? SERVER_SEARCH_RESULTS.slice()
+               : (currentSearchTerm
+                   ? allMemes.filter(m => getCaptionText(m).toLowerCase().includes(currentSearchTerm))
+                   : allMemes.slice());
            const photoOnly = base.filter(item => !hasLikelyMissingImage(item));
            return diversifyByImage(photoOnly);
+       }
+
+       async function fetchServerSearch(term, limit = 400) {
+           const safeTerm = encodeURIComponent(String(term || '').trim());
+           if (!safeTerm) return [];
+           const capped = Math.max(20, Math.min(1000, Number(limit) || 400));
+           const res = await fetch(`/api/search-feed?term=${safeTerm}&limit=${capped}`, { cache: 'no-store' });
+           if (!res.ok) return [];
+           const payload = await res.json().catch(() => ({}));
+           return Array.isArray(payload?.memes) ? payload.memes : [];
+       }
+
+       async function runServerSearch(term, container) {
+           const reqId = ++SEARCH_REQUEST_SEQ;
+           const clean = String(term || '').trim().toLowerCase();
+           if (!clean) {
+               SERVER_SEARCH_RESULTS = null;
+               renderCurrentView(container);
+               return;
+           }
+           try {
+               const results = await fetchServerSearch(clean, 500);
+               if (reqId !== SEARCH_REQUEST_SEQ) return;
+               SERVER_SEARCH_RESULTS = dedupeMemes(results);
+               renderCurrentView(container);
+           } catch (_err) {
+               if (reqId !== SEARCH_REQUEST_SEQ) return;
+               SERVER_SEARCH_RESULTS = null;
+               renderCurrentView(container);
+           }
        }
 
        function hasLikelyMissingImage(item) {
@@ -2159,6 +2195,10 @@
                swipeIndex = 0;
                swipeHistory = [];
                if (!currentSearchTerm) saveSwipeProgress();
+               if (SEARCH_DEBOUNCE_TIMER) clearTimeout(SEARCH_DEBOUNCE_TIMER);
+               SEARCH_DEBOUNCE_TIMER = setTimeout(() => {
+                   runServerSearch(currentSearchTerm, container).catch(() => {});
+               }, 220);
                renderCurrentView(container);
            });
        }
