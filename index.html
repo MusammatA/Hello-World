@@ -1069,6 +1069,26 @@
            console.warn('[UploaderIdentity] No compatible uploader identity columns found on captions table');
        }
 
+       async function stampUploaderIdentityServer(imageId, token) {
+           if (!imageId || !token) return;
+           try {
+               const res = await fetch('/api/stamp-uploader', {
+                   method: 'POST',
+                   headers: {
+                       Authorization: `Bearer ${token}`,
+                       'Content-Type': 'application/json'
+                   },
+                   body: JSON.stringify({ imageId })
+               });
+               if (!res.ok) {
+                   const body = await res.text().catch(() => '');
+                   console.warn('[UploaderIdentity] Server stamp failed:', res.status, body);
+               }
+           } catch (error) {
+               console.warn('[UploaderIdentity] Server stamp error:', error);
+           }
+       }
+
        function renderUploaderMeta(item) {
            if (!item) return '';
            const email = String(item.uploaderEmail || '').trim();
@@ -1314,6 +1334,7 @@
 
                // Verify DB persistence and refresh from DB so all users can see the same feed.
                await persistUploaderIdentityForImage(client, imageId);
+               await stampUploaderIdentityServer(imageId, token);
                const { data: persistedRows, error: persistedError } = await client
                    .from('captions')
                    .select('id')
