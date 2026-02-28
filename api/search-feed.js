@@ -12,26 +12,6 @@ function pickImageUrl(record = {}) {
   return null;
 }
 
-function parseUploaderUserIdFromUrl(url) {
-  const raw = String(url || '').trim();
-  if (!raw) return '';
-  const match = raw.match(/https?:\/\/[^/]+\/([^/?#]+)\//i);
-  return match ? String(match[1] || '').trim() : '';
-}
-
-function toTitleCase(value) {
-  return String(value || '')
-    .split(' ')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-function deriveNameFromEmail(email) {
-  const local = String(email || '').split('@')[0] || '';
-  return toTitleCase(local.replace(/[._-]+/g, ' ').trim() || email || 'Uploader');
-}
-
 function getCaptionText(row = {}) {
   const candidates = [
     row.content,
@@ -93,7 +73,6 @@ module.exports = async function handler(req, res) {
 
     const imageIds = Array.from(new Set(matched.map(r => String(r.image_id || '').trim()).filter(Boolean)));
     const imageMap = {};
-    const imageUploaderById = {};
     for (const batch of chunkArray(imageIds, 150)) {
       const { data, error } = await supabase.from('images').select('*').in('id', batch);
       if (error) throw error;
@@ -101,47 +80,16 @@ module.exports = async function handler(req, res) {
         const id = String(img.id || '').trim();
         const url = pickImageUrl(img);
         if (id && url) imageMap[id] = url;
-        if (id) imageUploaderById[id] = parseUploaderUserIdFromUrl(url || img.url || '');
       });
-    }
-
-    const userIdsToResolve = Array.from(new Set(
-      matched
-        .map((row) => {
-          const existingUserId = String(row.uploader_user_id || row.uploaded_by_user_id || row.created_by_user_id || '').trim();
-          if (existingUserId) return existingUserId;
-          const imageId = String(row.image_id || '').trim();
-          return String(imageUploaderById[imageId] || '').trim();
-        })
-        .filter(Boolean)
-    )).slice(0, 300);
-    const userEmailById = {};
-    for (const uid of userIdsToResolve) {
-      const { data } = await supabase.auth.admin.getUserById(uid);
-      const email = String(data?.user?.email || '').trim();
-      if (email) userEmailById[uid] = email;
     }
 
     const memes = matched.map((row) => {
       const imageId = String(row.image_id || '').trim();
-      const userId = String(
-        row.uploader_user_id ||
-        row.uploaded_by_user_id ||
-        row.created_by_user_id ||
-        imageUploaderById[imageId] ||
-        ''
-      ).trim();
-      const existingEmail = String(row.uploader_email || row.uploaded_by_email || row.created_by_email || '').trim();
-      const email = existingEmail || userEmailById[userId] || '';
-      const name = String(row.uploader_name || row.uploaded_by_name || row.created_by_name || '').trim() || deriveNameFromEmail(email);
       return {
         ...row,
         content: getCaptionText(row),
         image_id: row.image_id,
-        imageUrl: imageMap[imageId] || row.image_url || row.cdn_url || row.public_url || row.url || null,
-        uploader_user_id: userId || row.uploader_user_id || null,
-        uploader_email: email || row.uploader_email || null,
-        uploader_name: name || row.uploader_name || null
+        imageUrl: imageMap[imageId] || row.image_url || row.cdn_url || row.public_url || row.url || null
       };
     }).filter(m => m.content && m.imageUrl);
 

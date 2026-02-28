@@ -735,8 +735,8 @@
            return imageMap;
        }
 
-       async function fetchSharedFeed(limit = 20000) {
-           const capped = Math.max(500, Math.min(50000, Number(limit) || 20000));
+       async function fetchSharedFeed(limit = 3000) {
+           const capped = Math.max(200, Math.min(10000, Number(limit) || 3000));
            const res = await fetch(`/api/public-feed?limit=${capped}`, { cache: 'no-store' });
            if (!res.ok) {
                const body = await res.text().catch(() => '');
@@ -1747,7 +1747,7 @@
                let captions = [];
                let loadedFromSharedFeed = false;
                try {
-                   const shared = await fetchSharedFeed(20000);
+                   const shared = await fetchSharedFeed(3000);
                    captions = shared.captions;
                    imageUrlById = shared.images || {};
                    loadedFromSharedFeed = true;
