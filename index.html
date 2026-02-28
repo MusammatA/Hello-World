@@ -111,6 +111,8 @@
        let UPLOAD_IN_FLIGHT = false;
        let LAST_UPLOAD_AT = 0;
        let VISIBILITY_HOOK_SET = false;
+       let BROKEN_IMAGE_KEYS = new Set();
+       let BROKEN_IMAGE_REORDER_TIMER = null;
        const VOTE_COOLDOWNS = {};
        let GENERATION_UI_STATE = {
            status: 'idle',
@@ -128,6 +130,7 @@
        const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
        const UPLOAD_COOLDOWN_MS = 2500;
        const VOTE_COOLDOWN_MS = 450;
+       const BROKEN_IMAGE_STORAGE_KEY = 'broken_images_v1';
        const SUPPORTED_IMAGE_TYPES = new Set([
            'image/jpeg',
            'image/jpg',
@@ -185,6 +188,47 @@
 
        function normalizeImageId(value) {
            return String(value || '').trim().toLowerCase();
+       }
+
+       function loadBrokenImageKeys() {
+           try {
+               const raw = localStorage.getItem(BROKEN_IMAGE_STORAGE_KEY);
+               const parsed = raw ? JSON.parse(raw) : [];
+               BROKEN_IMAGE_KEYS = new Set(
+                   Array.isArray(parsed)
+                       ? parsed.map(normalizeImageId).filter(Boolean)
+                       : []
+               );
+           } catch (_err) {
+               BROKEN_IMAGE_KEYS = new Set();
+           }
+       }
+
+       function saveBrokenImageKeys() {
+           try {
+               localStorage.setItem(BROKEN_IMAGE_STORAGE_KEY, JSON.stringify(Array.from(BROKEN_IMAGE_KEYS)));
+           } catch (_err) {}
+       }
+
+       function markImageUnavailable(captionId, imageId, imageUrl) {
+           const keys = [captionId, imageId, imageUrl]
+               .map(normalizeImageId)
+               .filter(Boolean);
+           let changed = false;
+           keys.forEach((key) => {
+               if (!BROKEN_IMAGE_KEYS.has(key)) {
+                   BROKEN_IMAGE_KEYS.add(key);
+                   changed = true;
+               }
+           });
+           if (changed) saveBrokenImageKeys();
+           if (changed) {
+               if (BROKEN_IMAGE_REORDER_TIMER) clearTimeout(BROKEN_IMAGE_REORDER_TIMER);
+               BROKEN_IMAGE_REORDER_TIMER = setTimeout(() => {
+                   BROKEN_IMAGE_REORDER_TIMER = null;
+                   renderCurrentView();
+               }, 60);
+           }
        }
 
        function pickImageUrl(record = {}) {
@@ -495,6 +539,11 @@
 
        function hasLikelyMissingImage(item) {
            const raw = String(item?.imageUrl || '').trim().toLowerCase();
+           const broken = [item?.id, item?.image_id, item?.imageUrl]
+               .map(normalizeImageId)
+               .filter(Boolean)
+               .some((key) => BROKEN_IMAGE_KEYS.has(key));
+           if (broken || item?.imageUnavailable) return true;
            if (!raw) return true;
            if (raw.includes('this-content-is-not-available')) return true;
            if (raw.includes('/content_not_available')) return true;
@@ -1467,7 +1516,8 @@
                    const displayUrl = safeUrl(item.imageUrl, fallbackGif);
                    html += `
                            <div class="uploader-preview-item">
-                               <img src="${displayUrl}" class="uploader-preview-image" alt="Uploader meme preview">
+                               <img src="${displayUrl}" class="uploader-preview-image" alt="Uploader meme preview"
+                                    onerror="this.onerror=null; markImageUnavailable('${item.id}', '${item.image_id || ''}', (this.currentSrc || this.src)); this.src='https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3R6eW55b3R6eW55b3R6eW55/26hkhKd9CQeRv7lqM/giphy.gif';">
                                <div class="uploader-preview-caption">${safePreviewText(item.content || '')}</div>
                            </div>`;
                });
@@ -1644,6 +1694,10 @@
                allMemes = captions.map(item => ({
                    ...item,
                    imageUrl: imageUrlById[normalizeImageId(item.image_id)] || item.image_url || item.cdn_url || item.public_url || item.url || null,
+                   imageUnavailable: [item.id, item.image_id, imageUrlById[normalizeImageId(item.image_id)] || item.image_url || item.cdn_url || item.public_url || item.url || null]
+                       .map(normalizeImageId)
+                       .filter(Boolean)
+                       .some((key) => BROKEN_IMAGE_KEYS.has(key)),
                    ...extractUploaderIdentity(item)
                }));
                allMemes = applyCommunityMetadata(dedupeMemes(allMemes));
@@ -1758,7 +1812,7 @@
                    html += `
                    <li id="card-${item.id}">
                        <img src="${displayUrl}" class="meme-image" alt="Meme"
-                            onerror="this.onerror=null; this.src='${fallbackGif}';">
+                            onerror="this.onerror=null; markImageUnavailable('${item.id}', '${item.image_id || ''}', (this.currentSrc || this.src)); this.src='${fallbackGif}';">
                        <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
                        ${renderCommunityMeta(item)}
@@ -1911,7 +1965,7 @@
                    html += `
                        <li id="card-${item.id}">
                            <img src="${displayUrl}" class="meme-image" alt="Meme"
-                                onerror="this.onerror=null; this.src='${fallbackGif}';">
+                                onerror="this.onerror=null; markImageUnavailable('${item.id}', '${item.image_id || ''}', (this.currentSrc || this.src)); this.src='${fallbackGif}';">
                            <div class="card-content">${safeContent}</div>
                            ${renderAIMeta(item)}
                            ${renderCommunityMeta(item)}
@@ -1978,7 +2032,7 @@
                html += `
                    <li id="card-${item.id}">
                        <img src="${displayUrl}" class="meme-image" alt="Meme"
-                            onerror="this.onerror=null; this.src='${fallbackGif}';">
+                            onerror="this.onerror=null; markImageUnavailable('${item.id}', '${item.image_id || ''}', (this.currentSrc || this.src)); this.src='${fallbackGif}';">
                       
                        <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
@@ -2045,7 +2099,7 @@
                    </div>
                    <div class="swipe-card" id="swipe-card-${item.id}">
                        <img src="${displayUrl}" class="meme-image" alt="Meme"
-                            onerror="this.onerror=null; this.src='${fallbackGif}';">
+                            onerror="this.onerror=null; markImageUnavailable('${item.id}', '${item.image_id || ''}', (this.currentSrc || this.src)); this.src='${fallbackGif}';">
                        <div class="card-content">${safeContent}</div>
                        ${renderAIMeta(item)}
                        ${renderCommunityMeta(item)}
@@ -2228,6 +2282,7 @@
 
        window.addEventListener('resize', applyClientMode, { passive: true });
        window.addEventListener('orientationchange', applyClientMode, { passive: true });
+       loadBrokenImageKeys();
        initHomeAnimations();
        renderApp().catch((err) => {
            const msg = String(err && err.message ? err.message : err);
