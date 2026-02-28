@@ -154,8 +154,12 @@
        }
 
        function safePreviewText(value, max = 180) {
-           const text = String(value ?? '').trim();
+           const text = String(value ?? '').trim() || 'Caption pending...';
            return escapeHtml(text.length > max ? `${text.slice(0, max)}...` : text);
+       }
+
+       function getCaptionText(item) {
+           return String(item?.content || item?.caption_text || '').trim();
        }
 
        function safeUrl(url, fallback) {
@@ -471,9 +475,9 @@
 
        function getFilteredMemes() {
            const base = currentSearchTerm
-               ? allMemes.filter(m => m.content && m.content.toLowerCase().includes(currentSearchTerm))
+               ? allMemes.filter(m => getCaptionText(m).toLowerCase().includes(currentSearchTerm))
                : allMemes.slice();
-           return sortMemesByImageAvailability(base);
+           return diversifyByImage(sortMemesByImageAvailability(base));
        }
 
        function hasLikelyMissingImage(item) {
@@ -493,6 +497,27 @@
                    return a.missing ? 1 : -1;
                })
                .map(entry => entry.item);
+       }
+
+       function diversifyByImage(memes) {
+           const groups = new Map();
+           (Array.isArray(memes) ? memes : []).forEach((item) => {
+               const key = normalizeImageId(item?.image_id || item?.imageUrl || item?.id || 'unknown');
+               if (!groups.has(key)) groups.set(key, []);
+               groups.get(key).push(item);
+           });
+           const queues = Array.from(groups.values());
+           const out = [];
+           let keepGoing = true;
+           while (keepGoing) {
+               keepGoing = false;
+               for (const q of queues) {
+                   if (!q.length) continue;
+                   out.push(q.shift());
+                   keepGoing = true;
+               }
+           }
+           return out;
        }
 
        function switchView(view) {
@@ -704,11 +729,10 @@
            (Array.isArray(memes) ? memes : []).forEach((item, index) => {
                if (!item || typeof item !== 'object') return;
                const id = item.id || item.caption_id || `generated-fallback-${index}`;
-               if (byId.has(id)) return;
                const normalized = {
                    ...item,
                    id,
-                   content: item.content || item.caption_text || '',
+                   content: getCaptionText(item),
                    imageUrl: item.imageUrl || item.url || null
                };
                const extractedIdentity = extractUploaderIdentity(normalized);
@@ -740,7 +764,21 @@
                    normalized.generationStatus = 'ready';
                }
                normalized.communityName = getMemeCommunity(normalized);
-               byId.set(id, true);
+               const existingIndex = byId.get(id);
+               if (typeof existingIndex === 'number') {
+                   const existing = out[existingIndex];
+                   const existingScore =
+                       (getCaptionText(existing) ? 2 : 0) +
+                       (existing.imageUrl ? 1 : 0);
+                   const nextScore =
+                       (getCaptionText(normalized) ? 2 : 0) +
+                       (normalized.imageUrl ? 1 : 0);
+                   if (nextScore > existingScore) {
+                       out[existingIndex] = normalized;
+                   }
+                   return;
+               }
+               byId.set(id, out.length);
                out.push(normalized);
            });
            return out;
