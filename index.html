@@ -122,6 +122,7 @@
        };
        const SWIPE_PROGRESS_KEY_PREFIX = 'swipe_progress_v1_';
        const GENERATED_MEMES_KEY_PREFIX = 'generated_memes_v1_';
+       const GENERATED_MEMES_PUBLIC_KEY = 'generated_memes_public_v1';
        const COMMUNITIES_KEY_PREFIX = 'communities_v1_';
        const COMMUNITY_MAP_KEY_PREFIX = 'community_map_v1_';
        const PIPELINE_BASE_URL = 'https://api.almostcrackd.ai';
@@ -856,19 +857,18 @@
        }
 
        function saveGeneratedMemes() {
+           const payload = JSON.stringify(dedupeMemes(generatedMemes));
            const key = getGeneratedMemesKey();
-           if (!key) return;
            try {
-               localStorage.setItem(key, JSON.stringify(dedupeMemes(generatedMemes)));
+               if (key) localStorage.setItem(key, payload);
+               // Keep a public cache so generated uploads remain visible after logout
+               // on the same browser/session.
+               localStorage.setItem(GENERATED_MEMES_PUBLIC_KEY, payload);
            } catch (_err) {}
        }
 
        function restoreGeneratedMemes() {
-           const key = getGeneratedMemesKey();
-           if (!key) {
-               generatedMemes = [];
-               return;
-           }
+           const key = getGeneratedMemesKey() || GENERATED_MEMES_PUBLIC_KEY;
            try {
                const raw = localStorage.getItem(key);
                if (!raw) {
