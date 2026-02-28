@@ -154,12 +154,25 @@
        }
 
        function safePreviewText(value, max = 180) {
-           const text = String(value ?? '').trim() || 'Caption pending...';
+           const text = String(value ?? '').trim();
            return escapeHtml(text.length > max ? `${text.slice(0, max)}...` : text);
        }
 
        function getCaptionText(item) {
-           return String(item?.content || item?.caption_text || '').trim();
+           const candidates = [
+               item?.content,
+               item?.caption_text,
+               item?.caption,
+               item?.text,
+               item?.generated_caption,
+               item?.meme_text,
+               item?.output
+           ];
+           for (const candidate of candidates) {
+               const text = String(candidate ?? '').trim();
+               if (text) return text;
+           }
+           return '';
        }
 
        function safeUrl(url, fallback) {
@@ -735,6 +748,7 @@
                    content: getCaptionText(item),
                    imageUrl: item.imageUrl || item.url || null
                };
+               if (!normalized.content) return;
                const extractedIdentity = extractUploaderIdentity(normalized);
                if (extractedIdentity.uploaderEmail && !normalized.uploaderEmail) normalized.uploaderEmail = extractedIdentity.uploaderEmail;
                if (extractedIdentity.uploaderName && !normalized.uploaderName) normalized.uploaderName = extractedIdentity.uploaderName;
@@ -896,7 +910,7 @@
            return list.map((item, index) => ({
                ...item,
                id: item.id || item.caption_id || `generated-${Date.now()}-${index}`,
-               content: item.content || item.caption_text || '',
+               content: getCaptionText(item),
                imageUrl: cdnUrl,
                image_id: item.image_id || imageId || null,
                uploaderName: item.uploaderName || CURRENT_UPLOADER_NAME || deriveUploaderNameFromEmail(CURRENT_USER_EMAIL),
@@ -906,7 +920,7 @@
                aiModelTag: item.model || item.modelTag || 'caption-pipeline-v1',
                generatedAtUtc: item.generatedAtUtc || item.created_datetime_utc || generatedAtUtc,
                generationStatus: 'ready'
-            }));
+            })).filter(item => item.content);
         }
 
        async function persistUploaderIdentityForImage(client, imageId) {
