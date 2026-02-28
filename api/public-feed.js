@@ -17,6 +17,73 @@ function pickImageUrl(record = {}) {
   return null;
 }
 
+function parseUploaderUserIdFromUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/https?:\/\/[^/]+\/([^/?#]+)\//i);
+  return match ? String(match[1] || '').trim() : '';
+}
+
+function toTitleCase(value) {
+  return String(value || '')
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function deriveNameFromEmail(email) {
+  const local = String(email || '').split('@')[0] || '';
+  return toTitleCase(local.replace(/[._-]+/g, ' ').trim() || email || 'Uploader');
+}
+
+async function resolveUploaderIdentity(supabase, userIds) {
+  const emailById = {};
+  const nameById = {};
+  const ids = Array.from(new Set((userIds || []).map((v) => String(v || '').trim()).filter(Boolean)));
+  if (!ids.length) return { emailById, nameById };
+
+  for (const batch of chunkArray(ids, 200)) {
+    let rows = null;
+    let error = null;
+    ({ data: rows, error } = await supabase
+      .from('profiles')
+      .select('id,email,full_name,display_name,name')
+      .in('id', batch));
+
+    if (error) {
+      ({ data: rows, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', batch));
+    }
+
+    if (!error && Array.isArray(rows)) {
+      rows.forEach((row) => {
+        const id = String(row.id || row.user_id || row.profile_id || '').trim();
+        if (!id) return;
+        const email = String(row.email || row.user_email || '').trim();
+        const name = String(row.full_name || row.display_name || row.name || '').trim();
+        if (email) emailById[id] = email;
+        if (name) nameById[id] = name;
+      });
+    }
+  }
+
+  const unresolved = ids.filter((id) => !emailById[id]).slice(0, 180);
+  for (const uid of unresolved) {
+    try {
+      const { data } = await supabase.auth.admin.getUserById(uid);
+      const email = String(data?.user?.email || '').trim();
+      if (email) emailById[uid] = email;
+    } catch (_err) {
+      // Best effort only.
+    }
+  }
+
+  return { emailById, nameById };
+}
+
 function chunkArray(items, size) {
   const out = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -53,6 +120,7 @@ module.exports = async function handler(req, res) {
 
     const imageIds = Array.from(new Set(captions.map(c => String(c.image_id || '').trim()).filter(Boolean)));
     const images = {};
+    const imageUploaderById = {};
     for (const batch of chunkArray(imageIds, 150)) {
       const { data, error } = await supabase
         .from('images')
@@ -63,8 +131,40 @@ module.exports = async function handler(req, res) {
         const id = String(img.id || '').trim();
         const url = pickImageUrl(img);
         if (id && url) images[id] = url;
+        if (id) imageUploaderById[id] = parseUploaderUserIdFromUrl(url || img.url || '');
       });
     }
+
+    const uploaderIds = captions
+      .map((row) => {
+        const explicit = String(row.uploader_user_id || row.uploaded_by_user_id || row.created_by_user_id || '').trim();
+        if (explicit) return explicit;
+        const imageId = String(row.image_id || '').trim();
+        return String(imageUploaderById[imageId] || '').trim();
+      })
+      .filter(Boolean);
+    const { emailById, nameById } = await resolveUploaderIdentity(supabase, uploaderIds);
+
+    captions = captions.map((row) => {
+      const imageId = String(row.image_id || '').trim();
+      const uploaderUserId = String(
+        row.uploader_user_id ||
+        row.uploaded_by_user_id ||
+        row.created_by_user_id ||
+        imageUploaderById[imageId] ||
+        ''
+      ).trim();
+      const existingEmail = String(row.uploader_email || row.uploaded_by_email || row.created_by_email || '').trim();
+      const existingName = String(row.uploader_name || row.uploaded_by_name || row.created_by_name || '').trim();
+      const uploaderEmail = existingEmail || emailById[uploaderUserId] || '';
+      const uploaderName = existingName || nameById[uploaderUserId] || deriveNameFromEmail(uploaderEmail);
+      return {
+        ...row,
+        uploader_user_id: uploaderUserId || row.uploader_user_id || null,
+        uploader_email: uploaderEmail || row.uploader_email || null,
+        uploader_name: uploaderName || row.uploader_name || null
+      };
+    });
 
     return res.status(200).json({ captions, images });
   } catch (error) {
