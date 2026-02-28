@@ -749,6 +749,18 @@
            };
        }
 
+       async function waitForImageInSharedFeed(imageId, attempts = 8, delayMs = 1200) {
+           const target = String(imageId || '').trim();
+           if (!target) return false;
+           for (let i = 0; i < attempts; i += 1) {
+               await refreshFeed(false);
+               const found = allMemes.some(item => String(item.image_id || '').trim() === target);
+               if (found) return true;
+               await new Promise(resolve => setTimeout(resolve, delayMs));
+           }
+           return false;
+       }
+
        function getSwipeProgressKey() {
            return CURRENT_USER_ID ? `${SWIPE_PROGRESS_KEY_PREFIX}${CURRENT_USER_ID}` : null;
        }
@@ -1293,7 +1305,6 @@
                if (newCaptions.length) {
                    generatedMemes = dedupeMemes([...newCaptions, ...generatedMemes]);
                    saveGeneratedMemes();
-                   allMemes = applyCommunityMetadata(dedupeMemes([...generatedMemes, ...allMemes]));
                    setUploadStatus(`New batch ready: ${newCaptions.length} caption(s).`);
                    communityUploadStatus = `Uploaded to ${communityName}. ${newCaptions.length} caption(s) generated.`;
                } else {
@@ -1309,8 +1320,11 @@
                    .eq('image_id', imageId)
                    .limit(1);
                if (!persistedError && persistedRows && persistedRows.length) {
-                   setUploadStatus('Saved to shared feed.');
-                   await refreshFeed(false);
+                   setUploadStatus('Saving to shared feed...');
+                   const visible = await waitForImageInSharedFeed(imageId, 8, 1200);
+                   setUploadStatus(visible
+                       ? 'Saved to shared feed for everyone.'
+                       : 'Saved, but still propagating. Refresh in a few seconds.');
                } else if (persistedError) {
                    console.warn('[Pipeline] Persist check failed', persistedError);
                }
@@ -1777,7 +1791,6 @@
 
                restoreGeneratedMemes();
                generatedMemes = applyCommunityMetadata(generatedMemes);
-               allMemes = applyCommunityMetadata(dedupeMemes([...generatedMemes, ...allMemes]));
 
                restoreSwipeProgress();
                updateSideTabs();
