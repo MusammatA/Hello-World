@@ -158,7 +158,15 @@ module.exports = async function handler(req, res) {
 
     const uploaderIds = captions
       .map((row) => {
-        const explicit = String(row.uploader_user_id || row.uploaded_by_user_id || row.created_by_user_id || '').trim();
+        const explicit = String(
+          row.uploader_user_id ||
+          row.uploaded_by_user_id ||
+          row.created_by_user_id ||
+          row.profile_id ||
+          row.user_id ||
+          row.created_by ||
+          ''
+        ).trim();
         if (explicit) return explicit;
         const imageId = String(row.image_id || '').trim();
         return String(imageUploaderById[imageId] || '').trim();
@@ -172,6 +180,9 @@ module.exports = async function handler(req, res) {
         row.uploader_user_id ||
         row.uploaded_by_user_id ||
         row.created_by_user_id ||
+        row.profile_id ||
+        row.user_id ||
+        row.created_by ||
         imageUploaderById[imageId] ||
         ''
       ).trim();
