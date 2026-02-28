@@ -20,6 +20,8 @@ function pickImageUrl(record = {}) {
 function parseUploaderUserIdFromUrl(url) {
   const raw = String(url || '').trim();
   if (!raw) return '';
+  const uuidMatch = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
+  if (uuidMatch) return String(uuidMatch[0] || '').trim();
   const match = raw.match(/https?:\/\/[^/]+\/([^/?#]+)\//i);
   return match ? String(match[1] || '').trim() : '';
 }
@@ -75,6 +77,25 @@ async function resolveUploaderIdentity(supabase, userIds) {
     try {
       const { data } = await supabase.auth.admin.getUserById(uid);
       const email = String(data?.user?.email || '').trim();
+      if (email) emailById[uid] = email;
+    } catch (_err) {
+      // Best effort only.
+    }
+  }
+
+  const unresolvedAfterSdk = ids.filter((id) => !emailById[id]).slice(0, 180);
+  for (const uid of unresolvedAfterSdk) {
+    try {
+      const resp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(uid)}`, {
+        method: 'GET',
+        headers: {
+          apikey: SERVICE_KEY,
+          Authorization: `Bearer ${SERVICE_KEY}`
+        }
+      });
+      if (!resp.ok) continue;
+      const payload = await resp.json();
+      const email = String(payload?.email || payload?.user?.email || '').trim();
       if (email) emailById[uid] = email;
     } catch (_err) {
       // Best effort only.
