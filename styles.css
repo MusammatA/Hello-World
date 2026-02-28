@@ -987,3 +987,39 @@ body.iphone-mode #search-input,
 body.iphone-mode .account-name-input {
   font-size: 16px;
 }
+
+.auth-gate-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 4, 12, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 20px;
+}
+
+.auth-gate-dialog {
+  width: min(520px, 100%);
+  background: linear-gradient(180deg, rgba(30, 24, 46, 0.98) 0%, rgba(24, 20, 40, 0.98) 100%);
+  border: 1px solid rgba(255, 140, 211, 0.24);
+  border-radius: 8px;
+  padding: 22px;
+  box-shadow: var(--shadow);
+}
+
+.auth-gate-dialog h3 {
+  margin: 0 0 10px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.auth-gate-dialog p {
+  margin: 0 0 16px;
+  color: var(--ink-muted);
+}
+
+.auth-gate-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}

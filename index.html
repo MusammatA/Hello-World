@@ -866,16 +866,55 @@
        }
 
        function renderHeaderActions(showRefresh = true) {
+           const authButton = CURRENT_USER_ID
+               ? `<button class="logout-btn" onclick="getClient().auth.signOut().then(() => location.reload())">
+                       <i class="fa-solid fa-arrow-right-from-bracket"></i> Log out
+                  </button>`
+               : `<button class="logout-btn" onclick="showLoginPrompt('Sign in to vote and upload.')">
+                       <i class="fa-solid fa-right-to-bracket"></i> Sign in
+                  </button>`;
            return `
                <div class="top-actions">
                    ${showRefresh ? `
                    <button class="logout-btn" onclick="refreshFeed(true)">
                        <i class="fa-solid fa-rotate"></i> Refresh feed
                    </button>` : ''}
-                   <button class="logout-btn" onclick="getClient().auth.signOut().then(() => location.reload())">
-                       <i class="fa-solid fa-arrow-right-from-bracket"></i> Log out
-                   </button>
+                   ${authButton}
                </div>`;
+       }
+
+       function showLoginPrompt(message = 'Please sign in to continue.') {
+           const existing = document.getElementById('auth-gate-modal');
+           if (existing) existing.remove();
+           const modal = document.createElement('div');
+           modal.id = 'auth-gate-modal';
+           modal.className = 'auth-gate-modal';
+           modal.innerHTML = `
+               <div class="auth-gate-dialog">
+                   <h3>Sign in required</h3>
+                   <p>${escapeHtml(message)}</p>
+                   <div class="auth-gate-actions">
+                       <button class="logout-btn" onclick="signIn()">
+                           <i class="fa-brands fa-google"></i> Sign in with Google
+                       </button>
+                       <button class="logout-btn" onclick="closeLoginPrompt()">Not now</button>
+                   </div>
+               </div>`;
+           modal.addEventListener('click', (event) => {
+               if (event.target === modal) closeLoginPrompt();
+           });
+           document.body.appendChild(modal);
+       }
+
+       function closeLoginPrompt() {
+           const modal = document.getElementById('auth-gate-modal');
+           if (modal) modal.remove();
+       }
+
+       function ensureAuthenticated(actionLabel = 'continue') {
+           if (CURRENT_USER_ID) return true;
+           showLoginPrompt(`Please sign in to ${actionLabel}.`);
+           return false;
        }
 
        function renderAIMeta(item) {
@@ -931,6 +970,7 @@
 
        async function handleImageUpload(file, targetCommunity = null) {
            if (!file) return;
+           if (!ensureAuthenticated('upload images')) return;
            const communityName = ensureCommunityExists(targetCommunity || selectedCommunityName || 'General');
            const nowMs = Date.now();
            if (UPLOAD_IN_FLIGHT) {
@@ -1100,6 +1140,7 @@
        }
 
        async function handleCreateUploadClick() {
+           if (!ensureAuthenticated('upload images')) return;
            const input = document.getElementById('image-upload');
            if (!input) return;
            const file = PENDING_CREATE_UPLOAD_FILE || (input.files && input.files[0]);
@@ -1126,6 +1167,7 @@
        }
 
        async function handleCommunityUploadClick() {
+           if (!ensureAuthenticated('upload to communities')) return;
            const input = document.getElementById('community-image-upload');
            if (!input) return;
            const file = input.files && input.files[0];
@@ -1138,6 +1180,7 @@
        }
 
        function handleCreateCommunity() {
+           if (!ensureAuthenticated('create communities')) return;
            const input = document.getElementById('community-title-input');
            if (!input) return;
            const name = normalizeCommunityName(input.value);
@@ -1162,7 +1205,6 @@
        }
 
        async function refreshFeed(showNotice = false) {
-           if (!CURRENT_USER_ID) return;
            if (FEED_FETCH_IN_FLIGHT) {
                FEED_FETCH_QUEUED = true;
                return;
@@ -1342,6 +1384,7 @@
        }
       
        function renderSignedOut(container, searchBar, sidebar, message = '') {
+           CURRENT_USER_ID = null;
            CURRENT_ACCESS_TOKEN = null;
            CURRENT_USER_EMAIL = '';
            CURRENT_UPLOADER_NAME = '';
@@ -1362,6 +1405,22 @@
                    </button>
                    <div class="auth-meta">Callback route: /auth/callback</div>
                </div>`;
+       }
+
+       function applyPublicBrowseState(searchBar, sidebar) {
+           CURRENT_USER_ID = null;
+           CURRENT_ACCESS_TOKEN = null;
+           CURRENT_USER_EMAIL = '';
+           CURRENT_UPLOADER_NAME = '';
+           stopAutoRefresh();
+           stopRealtimeSync();
+           searchBar.style.display = 'block';
+           sidebar.style.display = 'flex';
+           closeMobileNav();
+           document.body.classList.add('has-sidebar');
+           currentView = 'grid';
+           updateSideTabs();
+           updateTopControls();
        }
 
        async function renderApp() {
@@ -1405,7 +1464,8 @@
                startRealtimeSync();
                await fetchAndShowMemes(client, container);
            } else {
-               renderSignedOut(container, searchBar, sidebar);
+               applyPublicBrowseState(searchBar, sidebar);
+               await fetchAndShowMemes(client, container);
            }
 
            client.auth.onAuthStateChange(async (_event, currentSession) => {
@@ -1423,12 +1483,14 @@
                    startRealtimeSync();
                    await fetchAndShowMemes(client, container);
                } else {
+                   applyPublicBrowseState(searchBar, sidebar);
                    CURRENT_ACCESS_TOKEN = null;
                    CURRENT_USER_EMAIL = '';
                    CURRENT_UPLOADER_NAME = '';
                    closeMobileNav();
                    stopAutoRefresh();
                    stopRealtimeSync();
+                   await fetchAndShowMemes(client, container);
                }
            });
        }
@@ -1520,6 +1582,13 @@
        }
 
        function renderCurrentView(container = document.getElementById('content-view')) {
+           const authOnlyViews = new Set(['upload', 'account', 'communities']);
+           if (!CURRENT_USER_ID && authOnlyViews.has(currentView)) {
+               showLoginPrompt('Please sign in to access this section.');
+               currentView = 'grid';
+               updateSideTabs();
+               updateTopControls();
+           }
            if (currentView === 'upload') {
                renderUploadView(container);
                return;
@@ -1911,6 +1980,7 @@
        }
 
        async function handleSwipeChoice(voteValue) {
+           if (!ensureAuthenticated('vote on captions')) return;
            const memes = getFilteredMemes();
            if (!memes.length || swipeIndex >= memes.length) return;
            const currentMeme = memes[swipeIndex];
@@ -1978,7 +2048,7 @@
        }
 
        async function handleVote(captionId, newValue, suppressGridUI = false, forceSet = false) {
-           if (!CURRENT_USER_ID) { alert("Please sign in first."); return; }
+           if (!ensureAuthenticated('vote on captions')) return;
            const voteKey = `${CURRENT_USER_ID}:${captionId}`;
            const nowMs = Date.now();
            if (VOTE_COOLDOWNS[voteKey] && (nowMs - VOTE_COOLDOWNS[voteKey] < VOTE_COOLDOWN_MS)) {
