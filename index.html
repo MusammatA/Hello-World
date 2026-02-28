@@ -534,7 +534,8 @@
            const base = currentSearchTerm
                ? allMemes.filter(m => getCaptionText(m).toLowerCase().includes(currentSearchTerm))
                : allMemes.slice();
-           return diversifyByImage(sortMemesByImageAvailability(base));
+           const photoOnly = base.filter(item => !hasLikelyMissingImage(item));
+           return diversifyByImage(photoOnly);
        }
 
        function hasLikelyMissingImage(item) {
