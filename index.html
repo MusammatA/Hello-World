@@ -130,7 +130,7 @@
        const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
        const UPLOAD_COOLDOWN_MS = 2500;
        const VOTE_COOLDOWN_MS = 450;
-       const BROKEN_IMAGE_STORAGE_KEY = 'broken_images_v1';
+       const BROKEN_IMAGE_STORAGE_KEY = 'broken_image_urls_v2';
        const SUPPORTED_IMAGE_TYPES = new Set([
            'image/jpeg',
            'image/jpg',
@@ -211,7 +211,7 @@
        }
 
        function markImageUnavailable(captionId, imageId, imageUrl) {
-           const keys = [captionId, imageId, imageUrl]
+           const keys = [imageUrl]
                .map(normalizeImageId)
                .filter(Boolean);
            let changed = false;
@@ -540,7 +540,7 @@
 
        function hasLikelyMissingImage(item) {
            const raw = String(item?.imageUrl || '').trim().toLowerCase();
-           const broken = [item?.id, item?.image_id, item?.imageUrl]
+           const broken = [item?.imageUrl]
                .map(normalizeImageId)
                .filter(Boolean)
                .some((key) => BROKEN_IMAGE_KEYS.has(key));
@@ -1728,7 +1728,7 @@
                allMemes = captions.map(item => ({
                    ...item,
                    imageUrl: imageUrlById[String(item.image_id || '').trim()] || imageUrlById[normalizeImageId(item.image_id)] || item.image_url || item.cdn_url || item.public_url || item.url || null,
-                   imageUnavailable: [item.id, item.image_id, imageUrlById[String(item.image_id || '').trim()] || imageUrlById[normalizeImageId(item.image_id)] || item.image_url || item.cdn_url || item.public_url || item.url || null]
+                   imageUnavailable: [imageUrlById[String(item.image_id || '').trim()] || imageUrlById[normalizeImageId(item.image_id)] || item.image_url || item.cdn_url || item.public_url || item.url || null]
                        .map(normalizeImageId)
                        .filter(Boolean)
                        .some((key) => BROKEN_IMAGE_KEYS.has(key)),
