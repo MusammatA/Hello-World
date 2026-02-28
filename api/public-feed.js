@@ -32,7 +32,7 @@ module.exports = async function handler(req, res) {
   try {
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
     const requested = Number(req.query?.limit);
-    const limit = Number.isFinite(requested) ? Math.max(50, Math.min(2000, requested)) : 1200;
+    const limit = Number.isFinite(requested) ? Math.max(200, Math.min(10000, requested)) : 5000;
 
     const pageSize = 500;
     const maxPages = Math.ceil(limit / pageSize);
