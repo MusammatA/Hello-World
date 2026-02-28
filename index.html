@@ -38,6 +38,27 @@
       <i class="fa-solid fa-bars"></i>
    </button>
 
+   <section class="home-hero" id="home-hero">
+      <div class="home-hero-inner">
+         <p class="home-kicker">Welcome</p>
+         <h1 class="home-title">Brain Rot Central</h1>
+         <p class="home-subtitle">Scroll down to explore the feed and vote on captions.</p>
+      </div>
+   </section>
+
+   <section class="home-story" id="home-story">
+      <div class="home-story-card" id="home-story-card">
+         <h2>What this site does</h2>
+         <p>
+            Brain Rot Central is a shared meme-caption playground. You can browse community uploads,
+            switch to swipe mode for fast reactions, and generate new captions from your own images.
+         </p>
+         <button class="browse-btn" id="browse-btn" onclick="goToFeed()">
+            Browse the Feed
+         </button>
+      </div>
+   </section>
+
    <div class="container">
        <h1>Brain Rot Central</h1>
        <p class="subtitle">Caption chaos, professionally organized.</p>
@@ -481,6 +502,30 @@
            updateTopControls();
            renderCurrentView();
            if (IS_PHONE_CLIENT) closeMobileNav();
+       }
+
+       function goToFeed() {
+           currentView = 'grid';
+           updateSideTabs();
+           updateTopControls();
+           renderCurrentView();
+           const feed = document.querySelector('.container');
+           if (feed) {
+               feed.scrollIntoView({ behavior: 'smooth', block: 'start' });
+           }
+       }
+
+       function initHomeAnimations() {
+           const storyCard = document.getElementById('home-story-card');
+           if (!storyCard || typeof IntersectionObserver === 'undefined') return;
+           const observer = new IntersectionObserver((entries) => {
+               entries.forEach((entry) => {
+                   if (!entry.isIntersecting) return;
+                   storyCard.classList.add('revealed');
+                   observer.disconnect();
+               });
+           }, { threshold: 0.35 });
+           observer.observe(storyCard);
        }
 
        function draw() {
@@ -2132,6 +2177,7 @@
 
        window.addEventListener('resize', applyClientMode, { passive: true });
        window.addEventListener('orientationchange', applyClientMode, { passive: true });
+       initHomeAnimations();
        renderApp().catch((err) => {
            const msg = String(err && err.message ? err.message : err);
            console.error('[App] renderApp fatal:', msg);
