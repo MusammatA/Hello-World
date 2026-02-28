@@ -549,7 +549,10 @@
            if (!safeTerm) return [];
            const capped = Math.max(20, Math.min(1000, Number(limit) || 400));
            const res = await fetch(`/api/search-feed?term=${safeTerm}&limit=${capped}`, { cache: 'no-store' });
-           if (!res.ok) return [];
+           if (!res.ok) {
+               console.warn('[Search] server search unavailable:', res.status);
+               return [];
+           }
            const payload = await res.json().catch(() => ({}));
            return Array.isArray(payload?.memes) ? payload.memes : [];
        }
@@ -565,7 +568,7 @@
            try {
                const results = await fetchServerSearch(clean, 500);
                if (reqId !== SEARCH_REQUEST_SEQ) return;
-               SERVER_SEARCH_RESULTS = dedupeMemes(results);
+               SERVER_SEARCH_RESULTS = results.length ? dedupeMemes(results) : null;
                renderCurrentView(container);
            } catch (_err) {
                if (reqId !== SEARCH_REQUEST_SEQ) return;
