@@ -122,7 +122,6 @@
        };
        const SWIPE_PROGRESS_KEY_PREFIX = 'swipe_progress_v1_';
        const GENERATED_MEMES_KEY_PREFIX = 'generated_memes_v1_';
-       const GENERATED_MEMES_PUBLIC_KEY = 'generated_memes_public_v1';
        const COMMUNITIES_KEY_PREFIX = 'communities_v1_';
        const COMMUNITY_MAP_KEY_PREFIX = 'community_map_v1_';
        const PIPELINE_BASE_URL = 'https://api.almostcrackd.ai';
@@ -697,6 +696,20 @@
            return imageMap;
        }
 
+       async function fetchSharedFeed(limit = 1200) {
+           const capped = Math.max(50, Math.min(2000, Number(limit) || 1200));
+           const res = await fetch(`/api/public-feed?limit=${capped}`, { cache: 'no-store' });
+           if (!res.ok) {
+               const body = await res.text().catch(() => '');
+               throw new Error(`public-feed ${res.status}: ${body || 'request failed'}`);
+           }
+           const payload = await res.json();
+           return {
+               captions: Array.isArray(payload?.captions) ? payload.captions : [],
+               images: payload?.images && typeof payload.images === 'object' ? payload.images : {}
+           };
+       }
+
        function getSwipeProgressKey() {
            return CURRENT_USER_ID ? `${SWIPE_PROGRESS_KEY_PREFIX}${CURRENT_USER_ID}` : null;
        }
@@ -857,18 +870,19 @@
        }
 
        function saveGeneratedMemes() {
-           const payload = JSON.stringify(dedupeMemes(generatedMemes));
            const key = getGeneratedMemesKey();
+           if (!key) return;
            try {
-               if (key) localStorage.setItem(key, payload);
-               // Keep a public cache so generated uploads remain visible after logout
-               // on the same browser/session.
-               localStorage.setItem(GENERATED_MEMES_PUBLIC_KEY, payload);
+               localStorage.setItem(key, JSON.stringify(dedupeMemes(generatedMemes)));
            } catch (_err) {}
        }
 
        function restoreGeneratedMemes() {
-           const key = getGeneratedMemesKey() || GENERATED_MEMES_PUBLIC_KEY;
+           const key = getGeneratedMemesKey();
+           if (!key) {
+               generatedMemes = [];
+               return;
+           }
            try {
                const raw = localStorage.getItem(key);
                if (!raw) {
@@ -1657,23 +1671,35 @@
            FEED_FETCH_IN_FLIGHT = true;
            try {
                let captions = [];
+               let loadedFromSharedFeed = false;
                try {
-                   captions = await fetchRecentCaptions(client, 1000, 8);
-               } catch (error) {
-                   const msg = String(error && error.message ? error.message : error);
-                   if (msg.includes('Navigator LockManager') || msg.includes('timed out waiting')) {
-                       await new Promise(resolve => setTimeout(resolve, 700));
-                       captions = await fetchRecentCaptions(client, 1000, 8);
-                   } else {
-                       throw error;
-                   }
+                   const shared = await fetchSharedFeed(1200);
+                   captions = shared.captions;
+                   imageUrlById = shared.images || {};
+                   loadedFromSharedFeed = true;
+               } catch (sharedError) {
+                   console.warn('[Feed] Shared public feed unavailable:', sharedError);
                }
 
-               try {
-                   imageUrlById = await fetchImagesByIds(client, captions.map(c => c.image_id));
-               } catch (error) {
-                   logMsg("Error images: " + error.message, "red");
-                   imageUrlById = {};
+               if (!loadedFromSharedFeed) {
+                   try {
+                       captions = await fetchRecentCaptions(client, 1000, 8);
+                   } catch (error) {
+                       const msg = String(error && error.message ? error.message : error);
+                       if (msg.includes('Navigator LockManager') || msg.includes('timed out waiting')) {
+                           await new Promise(resolve => setTimeout(resolve, 700));
+                           captions = await fetchRecentCaptions(client, 1000, 8);
+                       } else {
+                           throw error;
+                       }
+                   }
+
+                   try {
+                       imageUrlById = await fetchImagesByIds(client, captions.map(c => c.image_id));
+                   } catch (error) {
+                       logMsg("Error images: " + error.message, "red");
+                       imageUrlById = {};
+                   }
                }
 
                const localVotes = JSON.parse(localStorage.getItem('my_votes_v1') || '{}');
